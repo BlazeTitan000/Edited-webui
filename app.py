@@ -63,11 +63,24 @@ def get_onnx_session(provider):
     try:
         # Use absolute path for the model file
         model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'inswapper_128.onnx')
+        logger.info(f"Attempting to load model from: {model_path}")
+        
+        # Check if model file exists
+        if not os.path.exists(model_path):
+            logger.error(f"Model file not found at: {model_path}")
+            return None
+            
+        # Get available providers
+        available_providers = ort.get_available_providers()
+        logger.info(f"Available ONNX providers: {available_providers}")
+        
+        # Create session with specified provider
         session = ort.InferenceSession(model_path, providers=providers.get(provider, ['CPUExecutionProvider']))
-        logger.info(f"Created ONNX session with provider: {provider}")
+        logger.info(f"Successfully created ONNX session with provider: {provider}")
         return session
     except Exception as e:
-        logger.error(f"Error creating ONNX session: {e}")
+        logger.error(f"Error creating ONNX session: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
         return None
 
 @app.route('/')
