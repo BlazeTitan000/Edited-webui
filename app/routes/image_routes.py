@@ -15,6 +15,22 @@ import onnxruntime as ort
 bp = Blueprint('image', __name__)
 logger = logging.getLogger(__name__)
 
+def enhance_face(image, face):
+    # Get face region
+    x1, y1, x2, y2 = face.bbox.astype(int)
+    face_region = image[y1:y2, x1:x2]
+    
+    # Apply bilateral filter for noise reduction while preserving edges
+    face_region = cv2.bilateralFilter(face_region, 9, 75, 75)
+    
+    # Apply sharpening
+    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+    face_region = cv2.filter2D(face_region, -1, kernel)
+    
+    # Put enhanced face back
+    image[y1:y2, x1:x2] = face_region
+    return image
+
 @bp.route('/image_swap')
 def image_swap():
     return render_template('image_swap.html')
@@ -42,13 +58,13 @@ def swap_faces():
         # Set execution providers for face analyzer
         modules.globals.execution_providers = [provider]
         
-        # Initialize face analyzer with CUDA support
+        # Initialize face analyzer with CUDA support and higher detection threshold
         logger.info("Initializing face analyzer with CUDA...")
         face_analyzer = insightface.app.FaceAnalysis(
             name='buffalo_l',
             providers=['CUDAExecutionProvider']  # Force CUDA only
         )
-        face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
+        face_analyzer.prepare(ctx_id=0, det_size=(640, 640), det_thresh=0.6)  # Increased detection threshold
         
         if face_analyzer is None:
             return jsonify({'error': 'Failed to initialize face analyzer'}), 500
@@ -83,13 +99,12 @@ def swap_faces():
         # Process face swap with detailed logging
         logger.info("Starting face swap processing...")
         try:
-            # Perform face swap with enhanced quality settings
+            # Perform face swap
             processed_image = face_swapper.get(
                 target_image, 
                 target_face, 
                 source_face, 
-                paste_back=True,
-                upsample=True  # Enable upsampling for better quality
+                paste_back=True
             )
             
             if processed_image is None:
@@ -108,6 +123,9 @@ def swap_faces():
             if np.mean(face_area) < 10:  # If average pixel value is very low
                 logger.error("Face area is black after processing")
                 return jsonify({'error': 'Face area is black after processing'}), 500
+            
+            # Enhance the swapped face
+            processed_image = enhance_face(processed_image, target_face)
             
         except Exception as e:
             logger.error(f"Error in face swap processing: {str(e)}")
