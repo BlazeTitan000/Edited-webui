@@ -135,8 +135,8 @@ def handle_frame():
         frame = np.array(Image.open(io.BytesIO(frame_data)))
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-        # Process the frame
-        processed_frame = process_frame(source_face, frame, session)
+        # Process the frame - only pass source_face and frame
+        processed_frame = process_frame(source_face, frame)
 
         if recording and out:
             out.write(processed_frame)
