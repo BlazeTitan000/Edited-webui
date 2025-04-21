@@ -11,9 +11,13 @@ from PIL import Image
 import onnxruntime as ort
 import logging
 import time
+from datetime import datetime
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -35,6 +39,18 @@ out = None  # Video writer object
 source_face = None
 execution_provider = None
 session = None
+
+# Add request logging
+@app.before_request
+def log_request_info():
+    if request.path == '/upload_frame':
+        logger.warning(f"Unexpected request to /upload_frame from {request.remote_addr} - User-Agent: {request.user_agent.string}")
+
+# Add handler for /upload_frame to properly respond
+@app.route('/upload_frame', methods=['POST'])
+def handle_upload_frame():
+    logger.warning(f"Received upload_frame request from {request.remote_addr}")
+    return "This endpoint is not supported. Please use WebSocket for frame processing.", 405
 
 def get_onnx_session(provider):
     """Create ONNX session with specified execution provider"""
