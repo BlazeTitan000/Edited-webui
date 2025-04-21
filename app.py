@@ -47,12 +47,6 @@ session = None
 
 def get_onnx_session(provider):
     """Create ONNX session with specified execution provider"""
-    providers = {
-        'CPUExecutionProvider': ['CPUExecutionProvider'],
-        'CUDAExecutionProvider': ['CUDAExecutionProvider', 'CPUExecutionProvider'],
-        'OpenVINOExecutionProvider': ['OpenVINOExecutionProvider', 'CPUExecutionProvider']
-    }
-    
     try:
         # Use absolute path for the model file
         model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'inswapper_128.onnx')
@@ -67,9 +61,38 @@ def get_onnx_session(provider):
         available_providers = ort.get_available_providers()
         logger.info(f"Available ONNX providers: {available_providers}")
         
-        # Create session with specified provider
-        session = ort.InferenceSession(model_path, providers=providers.get(provider, ['CPUExecutionProvider']))
-        logger.info(f"Successfully created ONNX session with provider: {provider}")
+        # Create session with optimized settings for RTX A6000
+        try:
+            # Set optimized session options for high-end GPU
+            session_options = ort.SessionOptions()
+            session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            session_options.enable_cpu_mem_arena = False  # Disable CPU memory arena for GPU focus
+            session_options.enable_mem_pattern = True     # Enable memory pattern optimization
+            session_options.enable_mem_reuse = True       # Enable memory reuse
+            session_options.intra_op_num_threads = 4      # Increase intra-op threads
+            session_options.inter_op_num_threads = 4      # Increase inter-op threads
+            session_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL  # Enable parallel execution
+            
+            # CUDA specific options
+            cuda_provider_options = {
+                'device_id': 0,  # Use first GPU
+                'arena_extend_strategy': 'kNextPowerOfTwo',
+                'gpu_mem_limit': 40 * 1024 * 1024 * 1024,  # 40GB limit (leaving some for system)
+                'cudnn_conv_algo_search': 'EXHAUSTIVE',     # Use exhaustive search for best performance
+                'do_copy_in_default_stream': True,          # Enable stream optimization
+            }
+            
+            # Create session with CUDA provider and optimized settings
+            session = ort.InferenceSession(
+                model_path, 
+                providers=[('CUDAExecutionProvider', cuda_provider_options)],
+                sess_options=session_options
+            )
+            logger.info("Successfully created optimized ONNX session with CUDA provider")
+        except Exception as e:
+            logger.error(f"Failed to create optimized CUDA session: {e}")
+            return None
+            
         return session
     except Exception as e:
         logger.error(f"Error creating ONNX session: {str(e)}")
@@ -95,9 +118,9 @@ def upload_face():
     if file.filename == '':
         return "No selected file", 400
     
-    # Get execution provider
-    execution_provider = request.form.get('provider', 'CPUExecutionProvider')
-    logger.info(f"Selected execution provider: {execution_provider}")
+    # Force CUDA provider for RTX A6000
+    execution_provider = 'CUDAExecutionProvider'
+    logger.info(f"Using CUDA provider for RTX A6000")
     
     try:
         # Save uploaded file
@@ -105,17 +128,17 @@ def upload_face():
         file.save(file_path)
         uploaded_face_path = file_path
         
-        # Initialize ONNX session
+        # Initialize optimized ONNX session
         session = get_onnx_session(execution_provider)
         if session is None:
-            return "Error initializing face processing", 500
+            return "Error initializing face processing with CUDA", 500
         
         # Pre-process the source face
         source_face = get_one_face(cv2.imread(uploaded_face_path))
         if source_face is None:
             return "No face detected in the image", 400
             
-        logger.info("Face image processed successfully")
+        logger.info("Face image processed successfully with CUDA")
         return "Success", 200
         
     except Exception as e:
