@@ -267,12 +267,6 @@ def handle_frame():
         frame = np.array(Image.open(io.BytesIO(frame_data)))
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         
-        # Add black rectangle by default
-        if BLACK_RECTANGLE_ENABLED:
-            x, y = BLACK_RECTANGLE_POSITION
-            w, h = BLACK_RECTANGLE_SIZE
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 0), -1)
-        
         # Resize frame to minimum size for faster processing
         frame = cv2.resize(frame, MIN_FRAME_SIZE)
         
@@ -284,6 +278,11 @@ def handle_frame():
         if target_face:
             try:
                 processed_frame = process_frame(source_face, frame)
+                # Add black rectangle only when processing is successful
+                if BLACK_RECTANGLE_ENABLED:
+                    x, y = BLACK_RECTANGLE_POSITION
+                    w, h = BLACK_RECTANGLE_SIZE
+                    cv2.rectangle(processed_frame, (x, y), (x + w, y + h), (0, 0, 0), -1)
                 # Resize back to original size
                 processed_frame = cv2.resize(processed_frame, (640, 480))
             except Exception as e:
@@ -299,7 +298,7 @@ def handle_frame():
             out.write(processed_frame)
 
         # Convert processed frame to base64 with minimal quality
-        _, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 60])  # Reduced quality for faster encoding
+        _, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
         processed_frame_data = base64.b64encode(buffer).decode('utf-8')
 
         return processed_frame_data, 200
