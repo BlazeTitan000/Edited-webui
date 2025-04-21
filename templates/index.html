@@ -16,7 +16,7 @@
             <form id="upload-form" enctype="multipart/form-data">
                 <div class="form-group">
                     <label for="face">Select a Face Image:</label>
-                    <input type="file" id="face" name="face" accept="image/*" onchange="uploadFace();">
+                    <input type="file" id="face" name="face" accept="image/*">
                 </div>
 
                 <div class="form-group">
@@ -39,10 +39,10 @@
         </div>
 
         <div class="controls">
-            <button id="live-button" type="button" onclick="startLive()" disabled>Go Live</button>
-            <button id="stop-button" type="button" onclick="stopLive()" disabled>Stop Streaming</button>
-            <button id="record-button" type="button" onclick="startRecording()" disabled>Start Recording</button>
-            <button id="stop-record-button" type="button" onclick="stopRecording()" disabled>Stop Recording</button>
+            <button id="live-button" type="button" disabled>Go Live</button>
+            <button id="stop-button" type="button" disabled>Stop Streaming</button>
+            <button id="record-button" type="button" disabled>Start Recording</button>
+            <button id="stop-record-button" type="button" disabled>Stop Recording</button>
         </div>
 
         <div class="status-section">
@@ -58,15 +58,16 @@
         const processFrameUrl = "{{ url_for('handle_frame') }}";
         const startRecordUrl = "{{ url_for('start_record') }}";
         const stopRecordUrl = "{{ url_for('stop_record') }}";
-
-        // Define global configuration
-        const config = {
-            frameInterval: 100, // milliseconds between frames
-            maxErrors: 5,      // maximum number of errors before stopping
-            jpegQuality: 0.8   // JPEG compression quality (0-1)
-        };
     </script>
     <script src="{{ url_for('static', filename='scripts.js') }}"></script>
+    <script>
+        // Initialize event listeners after scripts are loaded
+        document.getElementById('face').addEventListener('change', uploadFace);
+        document.getElementById('live-button').addEventListener('click', startLive);
+        document.getElementById('stop-button').addEventListener('click', stopLive);
+        document.getElementById('record-button').addEventListener('click', startRecording);
+        document.getElementById('stop-record-button').addEventListener('click', stopRecording);
+    </script>
 </body>
 
 </html>
