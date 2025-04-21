@@ -49,10 +49,11 @@ FACE_ANALYSER = None
 FACE_ANALYSER_MODELS = {}  # Cache for loaded models
 last_face_detection = None
 last_face_detection_time = 0
-FACE_CACHE_DURATION = 0.5  # Cache face detection for 0.5 seconds
+FACE_CACHE_DURATION = 0.2  # Reduced cache duration for more responsive detection
 frame_counter = 0
-PROCESS_EVERY_N_FRAMES = 3  # Process every 3rd frame
-MIN_FRAME_SIZE = (160, 120)  # Minimum frame size for processing
+PROCESS_EVERY_N_FRAMES = 2  # Process every 2nd frame for smoother output
+MIN_FRAME_SIZE = (320, 240)  # Increased minimum size for better quality
+last_processed_frame = None  # Cache for frame interpolation
 
 # Add global variables for frame saving
 last_save_time = 0
@@ -242,9 +243,15 @@ def get_one_face_optimized(frame):
         logger.error(f"Error in face detection: {e}")
         return None
 
+def interpolate_frames(current_frame, last_frame, alpha=0.5):
+    """Interpolate between frames for smoother output"""
+    if last_frame is None:
+        return current_frame
+    return cv2.addWeighted(current_frame, alpha, last_frame, 1 - alpha, 0)
+
 @app.route('/process_frame', methods=['POST'])
 def handle_frame():
-    global source_face, recording, out, session, frame_counter
+    global source_face, recording, out, session, frame_counter, last_processed_frame
     
     if source_face is None:
         return "No face image uploaded. Please upload a face image first.", 400
@@ -258,16 +265,19 @@ def handle_frame():
         if not frame_data:
             return "No frame data received", 400
 
-        # Skip frames for better performance
-        frame_counter += 1
-        if frame_counter % PROCESS_EVERY_N_FRAMES != 0:
-            return frame_data, 200  # Return original frame if skipping
-
         # Convert received data to OpenCV image with minimal processing
         frame = np.array(Image.open(io.BytesIO(frame_data)))
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         
-        # Resize frame to minimum size for faster processing
+        # Skip frames for better performance
+        frame_counter += 1
+        if frame_counter % PROCESS_EVERY_N_FRAMES != 0:
+            # Use frame interpolation for skipped frames
+            if last_processed_frame is not None:
+                frame = interpolate_frames(frame, last_processed_frame)
+            return frame_data, 200
+
+        # Resize frame to minimum size for faster processing while maintaining quality
         frame = cv2.resize(frame, MIN_FRAME_SIZE)
         
         # Process the frame with timing
@@ -283,13 +293,17 @@ def handle_frame():
                     x, y = BLACK_RECTANGLE_POSITION
                     w, h = BLACK_RECTANGLE_SIZE
                     cv2.rectangle(processed_frame, (x, y), (x + w, y + h), (0, 0, 0), -1)
-                # Resize back to original size
-                processed_frame = cv2.resize(processed_frame, (640, 480))
+                # Resize back to original size with high quality
+                processed_frame = cv2.resize(processed_frame, (640, 480), interpolation=cv2.INTER_LINEAR)
+                # Cache the processed frame for interpolation
+                last_processed_frame = processed_frame.copy()
             except Exception as e:
                 logger.error(f"Error in face processing: {e}")
                 processed_frame = frame
+                last_processed_frame = None
         else:
             processed_frame = frame  # Skip processing if no face detected
+            last_processed_frame = None
         
         processing_time = time.time() - start_time
         logger.info(f"Frame processing time: {processing_time:.3f} seconds ({1/processing_time:.1f} FPS)")
@@ -297,8 +311,8 @@ def handle_frame():
         if recording and out:
             out.write(processed_frame)
 
-        # Convert processed frame to base64 with minimal quality
-        _, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
+        # Convert processed frame to base64 with high quality
+        _, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
         processed_frame_data = base64.b64encode(buffer).decode('utf-8')
 
         return processed_frame_data, 200
