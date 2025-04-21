@@ -1,22 +1,26 @@
 let isRecording = false;
-let ws = null;
 let mediaStream = null;
 let canvas = document.getElementById('webcam-canvas');
 let ctx = canvas.getContext('2d');
 let video = document.getElementById('webcam');
 let liveStream = document.getElementById('live-stream');
+let processingInterval = null;
+let errorCount = 0;
 
 // Initialize webcam
 async function initWebcam() {
     try {
+        console.log("Initializing webcam...");
         mediaStream = await navigator.mediaDevices.getUserMedia({
             video: {
                 width: { ideal: 640 },
                 height: { ideal: 480 }
             }
         });
+        console.log("Webcam access granted");
         video.srcObject = mediaStream;
         video.onloadedmetadata = () => {
+            console.log(`Webcam resolution: ${video.videoWidth}x${video.videoHeight}`);
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
         };
@@ -29,16 +33,19 @@ async function initWebcam() {
 }
 
 function uploadFace() {
+    console.log("Starting face upload...");
     const fileInput = document.getElementById('face');
     const file = fileInput.files[0];
 
     if (!file) {
+        console.error("No file selected");
         document.getElementById('error-message').innerText = "Please select a file first.";
         return;
     }
 
     // Validate file type
     if (!file.type.match('image.*')) {
+        console.error("Invalid file type:", file.type);
         document.getElementById('error-message').innerText = "Please select an image file.";
         return;
     }
@@ -46,6 +53,7 @@ function uploadFace() {
     // Get selected execution provider
     const providerSelect = document.getElementById('providers');
     const selectedProvider = providerSelect.value;
+    console.log("Selected provider:", selectedProvider);
 
     var formData = new FormData();
     formData.append('face', file);
@@ -55,6 +63,7 @@ function uploadFace() {
     xhr.open('POST', uploadUrl, true);
 
     xhr.onload = function () {
+        console.log("Upload response status:", xhr.status);
         if (xhr.status === 200) {
             document.getElementById('live-button').disabled = false;
             document.getElementById('record-button').disabled = false;
@@ -62,19 +71,30 @@ function uploadFace() {
             var messageElement = document.getElementById('message');
             messageElement.innerText = "File uploaded successfully!";
             document.getElementById('error-message').innerText = "";
+            console.log("Face upload successful");
 
             setTimeout(function () {
                 messageElement.innerText = "";
             }, 5000);
 
         } else {
+            console.error("Upload failed:", xhr.statusText);
             document.getElementById('message').innerText = "";
             document.getElementById('error-message').innerText = "An error occurred during file upload: " + xhr.statusText;
         }
     };
 
     xhr.onerror = function () {
+        console.error("Network error during upload");
         document.getElementById('error-message').innerText = "Network error occurred during upload.";
+    };
+
+    xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable) {
+            const percentComplete = (e.loaded / e.total) * 100;
+            console.log(`Upload progress: ${percentComplete}%`);
+            document.getElementById('progress-bar').innerText = `Uploading: ${Math.round(percentComplete)}%`;
+        }
     };
 
     xhr.send(formData);
@@ -86,69 +106,73 @@ async function startLive() {
         if (!success) return;
     }
 
-    // Connect to WebSocket
-    ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
-        console.log("WebSocket connection established");
-        startStreaming();
-        document.getElementById('progress-bar').innerText = "Connected and streaming...";
-    };
-
-    ws.onmessage = (event) => {
-        if (event.data instanceof Blob) {
-            const url = URL.createObjectURL(event.data);
-            liveStream.src = url;
-            URL.revokeObjectURL(url);
-        } else {
-            // Handle text messages (errors)
-            document.getElementById('error-message').innerText = event.data;
-        }
-    };
-
-    ws.onclose = () => {
-        console.log("WebSocket connection closed");
-        stopStreaming();
-        document.getElementById('progress-bar').innerText = "Connection closed";
-    };
-
-    ws.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        document.getElementById('error-message').innerText = "WebSocket connection error";
-    };
-
+    // Start processing frames
+    processingInterval = setInterval(processFrame, 100); // Process every 100ms
+    document.getElementById('progress-bar').innerText = "Connected and streaming...";
     document.getElementById('stop-button').disabled = false;
     document.getElementById('live-button').disabled = true;
 }
 
-function startStreaming() {
-    function captureFrame() {
-        if (!mediaStream || !ws || ws.readyState !== WebSocket.OPEN) return;
+async function processFrame() {
+    if (!mediaStream) {
+        console.warn("No media stream available");
+        return;
+    }
 
+    try {
+        const startTime = performance.now();
+
+        // Capture frame from canvas
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((blob) => {
-            ws.send(blob);
-        }, 'image/jpeg', 0.8);
+        const frameBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
 
-        requestAnimationFrame(captureFrame);
+        // Send frame to server
+        const response = await fetch('/process_frame', {
+            method: 'POST',
+            body: frameBlob
+        });
+
+        if (response.ok) {
+            const processedFrameData = await response.text();
+            liveStream.src = 'data:image/jpeg;base64,' + processedFrameData;
+
+            const endTime = performance.now();
+            const processingTime = endTime - startTime;
+            console.log(`Frame processed in ${processingTime.toFixed(2)}ms`);
+
+            // Update FPS display
+            const fps = 1000 / processingTime;
+            document.getElementById('progress-bar').innerText = `Processing: ${fps.toFixed(1)} FPS`;
+        } else {
+            const error = await response.text();
+            console.error("Server error:", error);
+            document.getElementById('error-message').innerText = `Error processing frame: ${error}`;
+
+            // If we get too many errors, stop processing
+            errorCount = (errorCount || 0) + 1;
+            if (errorCount > 5) {
+                console.error("Too many errors, stopping processing");
+                stopLive();
+            }
+        }
+    } catch (error) {
+        console.error("Error processing frame:", error);
+        document.getElementById('error-message').innerText = "Error processing frame. Please try again.";
+
+        // If we get too many errors, stop processing
+        errorCount = (errorCount || 0) + 1;
+        if (errorCount > 5) {
+            console.error("Too many errors, stopping processing");
+            stopLive();
+        }
     }
-
-    captureFrame();
-}
-
-function stopStreaming() {
-    if (ws) {
-        ws.close();
-        ws = null;
-    }
-
-    document.getElementById('stop-button').disabled = true;
-    document.getElementById('live-button').disabled = false;
-    liveStream.src = '';
 }
 
 function stopLive() {
-    stopStreaming();
+    if (processingInterval) {
+        clearInterval(processingInterval);
+        processingInterval = null;
+    }
 
     if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
@@ -159,9 +183,15 @@ function stopLive() {
     if (isRecording) {
         stopRecording();
     }
+
+    document.getElementById('stop-button').disabled = true;
+    document.getElementById('live-button').disabled = false;
+    liveStream.src = '';
+    document.getElementById('progress-bar').innerText = "Streaming stopped";
 }
 
 function startRecording() {
+    console.log("Starting recording...");
     isRecording = true;
     document.getElementById('record-button').disabled = true;
     document.getElementById('stop-record-button').disabled = false;
@@ -171,21 +201,32 @@ function startRecording() {
     xhr.open('POST', startRecordUrl, true);
 
     xhr.onload = function () {
+        console.log("Start recording response:", xhr.status);
         if (xhr.status === 204) {
             document.getElementById('message').innerText = "Recording started";
+            console.log("Recording started successfully");
         } else {
+            console.error("Failed to start recording:", xhr.statusText);
             document.getElementById('error-message').innerText = "Failed to start recording";
+            isRecording = false;
+            document.getElementById('record-button').disabled = false;
+            document.getElementById('stop-record-button').disabled = true;
         }
     };
 
     xhr.onerror = function () {
+        console.error("Network error while starting recording");
         document.getElementById('error-message').innerText = "Network error while starting recording";
+        isRecording = false;
+        document.getElementById('record-button').disabled = false;
+        document.getElementById('stop-record-button').disabled = true;
     };
 
     xhr.send();
 }
 
 function stopRecording() {
+    console.log("Stopping recording...");
     isRecording = false;
     document.getElementById('record-button').disabled = false;
     document.getElementById('stop-record-button').disabled = true;
@@ -195,14 +236,18 @@ function stopRecording() {
     xhr.open('POST', stopRecordUrl, true);
 
     xhr.onload = function () {
+        console.log("Stop recording response:", xhr.status);
         if (xhr.status === 204) {
             document.getElementById('message').innerText = "Recording stopped";
+            console.log("Recording stopped successfully");
         } else {
+            console.error("Failed to stop recording:", xhr.statusText);
             document.getElementById('error-message').innerText = "Failed to stop recording";
         }
     };
 
     xhr.onerror = function () {
+        console.error("Network error while stopping recording");
         document.getElementById('error-message').innerText = "Network error while stopping recording";
     };
 

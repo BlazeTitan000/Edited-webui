@@ -1,5 +1,4 @@
 from flask import Flask, render_template, request, redirect, url_for, Response
-from flask_sock import Sock
 import cv2
 import os
 import threading
@@ -12,6 +11,7 @@ import onnxruntime as ort
 import logging
 import time
 from datetime import datetime
+import base64
 
 # Configure logging
 logging.basicConfig(
@@ -21,12 +21,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-sock = Sock(app)
 
 # Cloud deployment configurations
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
-app.config['SOCK_SERVER_OPTIONS'] = {'ping_interval': 25}
 
 # Ensure upload directory exists
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
@@ -39,18 +37,6 @@ out = None  # Video writer object
 source_face = None
 execution_provider = None
 session = None
-
-# Add request logging
-@app.before_request
-def log_request_info():
-    if request.path == '/upload_frame':
-        logger.warning(f"Unexpected request to /upload_frame from {request.remote_addr} - User-Agent: {request.user_agent.string}")
-
-# Add handler for /upload_frame to properly respond
-@app.route('/upload_frame', methods=['POST'])
-def handle_upload_frame():
-    logger.warning(f"Received upload_frame request from {request.remote_addr}")
-    return "This endpoint is not supported. Please use WebSocket for frame processing.", 405
 
 def get_onnx_session(provider):
     """Create ONNX session with specified execution provider"""
@@ -129,52 +115,41 @@ def upload_face():
         logger.error(f"Error processing face image: {e}")
         return str(e), 500
 
-@sock.route('/ws')
-def ws(ws):
+@app.route('/process_frame', methods=['POST'])
+def process_frame():
     global source_face, recording, out, session
     
     if source_face is None:
-        ws.send("No face image uploaded. Please upload a face image first.")
-        return
+        return "No face image uploaded. Please upload a face image first.", 400
 
     if session is None:
-        ws.send("Error: Face processing not initialized. Please try uploading the face image again.")
-        return
+        return "Error: Face processing not initialized. Please try uploading the face image again.", 400
 
     try:
-        while True:
-            try:
-                # Receive frame from client
-                frame_data = ws.receive()
-                if frame_data is None:
-                    break
+        # Get frame data from request
+        frame_data = request.get_data()
+        if not frame_data:
+            return "No frame data received", 400
 
-                # Convert received data to OpenCV image
-                frame = np.array(Image.open(io.BytesIO(frame_data)))
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        # Convert received data to OpenCV image
+        frame = np.array(Image.open(io.BytesIO(frame_data)))
+        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-                # Process the frame
-                processed_frame = process_frame(source_face, frame, session)
+        # Process the frame
+        processed_frame = process_frame(source_face, frame, session)
 
-                if recording and out:
-                    out.write(processed_frame)
+        if recording and out:
+            out.write(processed_frame)
 
-                # Convert processed frame back to JPEG
-                _, buffer = cv2.imencode('.jpg', processed_frame)
-                processed_frame_data = buffer.tobytes()
+        # Convert processed frame to base64
+        _, buffer = cv2.imencode('.jpg', processed_frame)
+        processed_frame_data = base64.b64encode(buffer).decode('utf-8')
 
-                # Send processed frame back to client
-                ws.send(processed_frame_data)
-
-            except Exception as e:
-                logger.error(f"Error processing frame: {e}")
-                ws.send(f"Error processing frame: {str(e)}")
-                time.sleep(0.1)  # Prevent tight error loop
-                continue
+        return processed_frame_data, 200
 
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        ws.send(f"WebSocket error: {str(e)}")
+        logger.error(f"Error processing frame: {e}")
+        return str(e), 500
 
 @app.route('/record/start', methods=['POST'])
 def start_record():
