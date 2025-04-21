@@ -45,6 +45,7 @@ out = None  # Video writer object
 source_face = None
 execution_provider = None
 session = None
+FACE_ANALYSER = None  # Add global face analyzer variable
 
 # Add global variables for frame saving
 last_save_time = 0
@@ -57,6 +58,11 @@ last_face_detection_time = 0
 FACE_CACHE_DURATION = 0.5  # Cache face detection for 0.5 seconds
 frame_counter = 0
 PROCESS_EVERY_N_FRAMES = 2  # Process every 2nd frame
+
+# Default black rectangle settings
+BLACK_RECTANGLE_ENABLED = True
+BLACK_RECTANGLE_POSITION = (100, 100)  # (x, y)
+BLACK_RECTANGLE_SIZE = (200, 200)  # (width, height)
 
 # Ensure debug frames directory exists
 if not os.path.exists(DEBUG_FRAMES_DIR):
@@ -236,6 +242,12 @@ def handle_frame():
         # Convert received data to OpenCV image with minimal processing
         frame = np.array(Image.open(io.BytesIO(frame_data)))
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        
+        # Add black rectangle by default
+        if BLACK_RECTANGLE_ENABLED:
+            x, y = BLACK_RECTANGLE_POSITION
+            w, h = BLACK_RECTANGLE_SIZE
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 0), -1)  # -1 for filled rectangle
         
         # Resize frame to minimum acceptable size for maximum speed
         frame = cv2.resize(frame, (320, 240))  # Minimum size for face detection
