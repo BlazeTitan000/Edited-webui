@@ -17,7 +17,27 @@ let errorCount = 0;
 let lastFrameTime = 0;
 let frameCounter = 0;
 let fpsCounter = 0;
+let uploadCounter = 0;
 let fpsTimer = null;
+let lastUploadTime = 0;
+let uploadSize = 0;
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function updateStatus() {
+    const currentTime = performance.now();
+    const uploadRate = uploadSize / ((currentTime - lastUploadTime) / 1000); // bytes per second
+    document.getElementById('progress-bar').innerText =
+        `Processing: ${fpsCounter} FPS | Upload: ${formatBytes(uploadRate)}/s`;
+    fpsCounter = 0;
+    uploadSize = 0;
+}
 
 // Initialize webcam
 async function initWebcam() {
@@ -85,8 +105,9 @@ function uploadFace() {
             document.getElementById('record-button').disabled = false;
 
             var messageElement = document.getElementById('message');
-            messageElement.innerText = "File uploaded successfully!";
+            messageElement.innerText = "Face image processed successfully!";
             document.getElementById('error-message').innerText = "";
+            document.getElementById('progress-bar').innerText = "Ready to go live";
             console.log("Face upload successful");
 
             setTimeout(function () {
@@ -96,20 +117,26 @@ function uploadFace() {
         } else {
             console.error("Upload failed:", xhr.statusText);
             document.getElementById('message').innerText = "";
-            document.getElementById('error-message').innerText = "An error occurred during file upload: " + xhr.statusText;
+            document.getElementById('error-message').innerText = "An error occurred during face processing: " + xhr.statusText;
+            document.getElementById('progress-bar').innerText = "Face processing failed";
         }
     };
 
     xhr.onerror = function () {
         console.error("Network error during upload");
         document.getElementById('error-message').innerText = "Network error occurred during upload.";
+        document.getElementById('progress-bar').innerText = "Upload failed";
     };
 
     xhr.upload.onprogress = function (e) {
         if (e.lengthComputable) {
             const percentComplete = (e.loaded / e.total) * 100;
             console.log(`Upload progress: ${percentComplete}%`);
-            document.getElementById('progress-bar').innerText = `Uploading: ${Math.round(percentComplete)}%`;
+            if (percentComplete < 100) {
+                document.getElementById('progress-bar').innerText = `Uploading face image: ${Math.round(percentComplete)}%`;
+            } else {
+                document.getElementById('progress-bar').innerText = "Processing face image...";
+            }
         }
     };
 
@@ -122,11 +149,9 @@ async function startLive() {
         if (!success) return;
     }
 
-    // Start FPS counter
-    fpsTimer = setInterval(() => {
-        document.getElementById('progress-bar').innerText = `Processing: ${fpsCounter} FPS`;
-        fpsCounter = 0;
-    }, 1000);
+    // Start status update timer
+    fpsTimer = setInterval(updateStatus, 1000);
+    lastUploadTime = performance.now();
 
     // Start processing frames
     processingInterval = setInterval(processFrame, config.frameInterval);
@@ -155,6 +180,9 @@ async function processFrame() {
         // Capture frame from canvas with fixed dimensions
         ctx.drawImage(video, 0, 0, 640, 480);
         const frameBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', config.jpegQuality));
+
+        // Track upload size
+        uploadSize += frameBlob.size;
 
         // Send frame to server
         const response = await fetch('/process_frame', {
