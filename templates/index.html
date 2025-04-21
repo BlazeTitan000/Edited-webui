@@ -53,10 +53,18 @@
     </div>
 
     <script>
+        // Define URLs for API endpoints
         const uploadUrl = "{{ url_for('upload_face') }}";
-        const wsUrl = "{{ url_for('ws') }}";
+        const processFrameUrl = "{{ url_for('process_frame') }}";
         const startRecordUrl = "{{ url_for('start_record') }}";
         const stopRecordUrl = "{{ url_for('stop_record') }}";
+
+        // Define global configuration
+        const config = {
+            frameInterval: 100, // milliseconds between frames
+            maxErrors: 5,      // maximum number of errors before stopping
+            jpegQuality: 0.8   // JPEG compression quality (0-1)
+        };
     </script>
     <script src="{{ url_for('static', filename='scripts.js') }}"></script>
 </body>
