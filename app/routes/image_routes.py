@@ -6,6 +6,7 @@ import logging
 from app.services.model_service import get_onnx_session, get_one_face_optimized
 from app.utils.config import Config
 from modules.processors.frame.face_swapper import process_frame
+from modules.face_analyser import get_one_face
 
 bp = Blueprint('image', __name__)
 logger = logging.getLogger(__name__)
@@ -39,9 +40,14 @@ def swap_faces():
         if session is None:
             return jsonify({'error': f'Failed to initialize {provider}'}), 500
 
+        # Get source face
+        source_face = get_one_face(face_image)
+        if source_face is None:
+            return jsonify({'error': 'No face detected in source image'}), 400
+
         # Process face swap
         try:
-            processed_image = process_frame(face_image, target_image, provider)
+            processed_image = process_frame(source_face, target_image)
             if processed_image is None:
                 return jsonify({'error': 'Face swap processing failed'}), 500
         except Exception as e:
