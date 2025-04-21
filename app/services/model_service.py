@@ -17,6 +17,11 @@ last_face_detection_time = 0
 
 def get_onnx_session(provider='CUDAExecutionProvider'):
     """Create ONNX session with specified execution provider"""
+    global session
+    
+    if session is not None:
+        return session
+        
     try:
         logger.info(f"Attempting to load model from: {Config.MODEL_PATH}")
         
@@ -26,6 +31,10 @@ def get_onnx_session(provider='CUDAExecutionProvider'):
             
         available_providers = ort.get_available_providers()
         logger.info(f"Available ONNX providers: {available_providers}")
+        
+        if provider not in available_providers:
+            logger.error(f"Requested provider {provider} not available. Available providers: {available_providers}")
+            return None
         
         try:
             session_options = ort.SessionOptions()
@@ -42,18 +51,17 @@ def get_onnx_session(provider='CUDAExecutionProvider'):
                 'gpu_mem_limit': 46 * 1024 * 1024 * 1024,
                 'arena_extend_strategy': 'kNextPowerOfTwo',
                 'cudnn_conv_algo_search': 'HEURISTIC',
-                'do_copy_in_default_stream': True,
-                'enable_cuda_graph': True
+                'do_copy_in_default_stream': True
             }
             
             session = ort.InferenceSession(
                 Config.MODEL_PATH, 
-                providers=[('CUDAExecutionProvider', cuda_provider_options)],
+                providers=[(provider, cuda_provider_options)],
                 sess_options=session_options
             )
-            logger.info("Successfully created maximum performance CUDA session")
+            logger.info(f"Successfully created {provider} session")
         except Exception as e:
-            logger.error(f"Failed to create CUDA session: {e}")
+            logger.error(f"Failed to create {provider} session: {e}")
             return None
             
         return session
@@ -96,18 +104,32 @@ def get_one_face_optimized(frame):
         return last_face_detection
     
     try:
+        # Ensure frame is in correct format
+        if len(frame.shape) != 3 or frame.shape[2] != 3:
+            logger.error("Invalid frame format")
+            return None
+            
         small_frame = cv2.resize(frame, Config.MIN_FRAME_SIZE)
         
-        if FACE_ANALYSER_MODELS:
-            det_model = FACE_ANALYSER_MODELS['det_model']
-            if det_model:
-                faces = det_model.get(small_frame)
-                if faces:
-                    last_face_detection = min(faces, key=lambda x: x.bbox[0])
-                    last_face_detection_time = current_time
-                    return last_face_detection
+        face_analyser = get_face_analyser()
+        if face_analyser is None:
+            logger.error("Face analyzer not initialized")
+            return None
+            
+        faces = face_analyser.get(small_frame)
         
-        return None
+        if not faces:
+            logger.debug("No faces detected in frame")
+            return None
+            
+        # Get the largest face
+        face = max(faces, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))
+        
+        # Cache the result
+        last_face_detection = face
+        last_face_detection_time = current_time
+        
+        return face
     except Exception as e:
         logger.error(f"Error in face detection: {e}")
         return None

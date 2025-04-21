@@ -1,17 +1,14 @@
 body {
     font-family: Arial, sans-serif;
     margin: 0;
-    padding: 20px;
+    padding: 0;
     background-color: #f5f5f5;
 }
 
 .container {
-    max-width: 800px;
-    margin: 0 auto;
-    background-color: white;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 1rem;
 }
 
 h1 {
@@ -21,48 +18,51 @@ h1 {
 }
 
 .upload-section {
-    margin-bottom: 20px;
+    background-color: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2rem;
 }
 
 .form-group {
-    margin-bottom: 15px;
+    margin-bottom: 1rem;
 }
 
-label {
+.form-group label {
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: 0.5rem;
     font-weight: bold;
 }
 
-input[type="file"],
-select {
+.form-group input[type="file"],
+.form-group select {
     width: 100%;
-    padding: 8px;
+    padding: 0.5rem;
     border: 1px solid #ddd;
     border-radius: 4px;
-    margin-bottom: 10px;
 }
 
 .video-section {
-    margin: 20px 0;
+    background-color: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2rem;
 }
 
 .video-container {
     position: relative;
-    width: 640px;
-    height: 480px;
+    width: 100%;
+    max-width: 800px;
     margin: 0 auto;
-    background-color: #000;
-    border-radius: 4px;
-    overflow: hidden;
 }
 
 #live-stream {
-    width: 640px;
-    height: 480px;
+    width: 100%;
+    height: auto;
     display: block;
-    margin: 0 auto;
-    object-fit: cover;
+    border-radius: 4px;
 }
 
 #webcam-canvas {
@@ -79,48 +79,49 @@ select {
 
 .controls {
     display: flex;
+    gap: 1rem;
     justify-content: center;
-    gap: 10px;
-    margin: 20px 0;
+    margin-bottom: 2rem;
 }
 
 button {
-    padding: 10px 20px;
+    padding: 0.75rem 1.5rem;
     border: none;
     border-radius: 4px;
-    background-color: #007bff;
+    background-color: #3498db;
     color: white;
     cursor: pointer;
     transition: background-color 0.3s;
 }
 
 button:hover {
-    background-color: #0056b3;
+    background-color: #2980b9;
 }
 
 button:disabled {
-    background-color: #cccccc;
+    background-color: #bdc3c7;
     cursor: not-allowed;
 }
 
 .status-section {
-    margin-top: 20px;
     text-align: center;
 }
 
 #progress-bar {
-    margin-bottom: 10px;
-    color: #666;
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+    background-color: #f8f9fa;
+    border-radius: 4px;
 }
 
 .message {
-    color: #28a745;
-    margin: 10px 0;
+    color: #27ae60;
+    margin-bottom: 1rem;
 }
 
 .error-message {
-    color: #dc3545;
-    margin: 10px 0;
+    color: #e74c3c;
+    margin-bottom: 1rem;
 }
 
 @media (max-width: 600px) {
@@ -135,37 +136,45 @@ button:disabled {
     }
 }
 
-/* Navigation */
+/* Navigation Bar Styles */
+.navbar {
+    background-color: #2c3e50;
+    padding: 1rem 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
 .nav-container {
-    background-color: #333;
-    padding: 1rem;
-    margin-bottom: 2rem;
-}
-
-.nav-menu {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1rem;
     display: flex;
-    justify-content: center;
-    list-style: none;
-    padding: 0;
-    margin: 0;
+    justify-content: space-between;
+    align-items: center;
 }
 
-.nav-menu li {
-    margin: 0 1rem;
-}
-
-.nav-menu a {
+.nav-brand {
     color: white;
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.nav-links {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.nav-link {
+    color: #ecf0f1;
     text-decoration: none;
     padding: 0.5rem 1rem;
     border-radius: 4px;
     transition: background-color 0.3s;
 }
 
-.nav-menu a:hover {
-    background-color: #555;
+.nav-link:hover {
+    background-color: #34495e;
 }
 
-.nav-menu a.active {
-    background-color: #007bff;
+.nav-link.active {
+    background-color: #3498db;
 }
