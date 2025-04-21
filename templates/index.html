@@ -54,10 +54,10 @@
 
     <script>
         // Define URLs for API endpoints
-        const uploadUrl = "{{ url_for('upload_face') }}";
-        const processFrameUrl = "{{ url_for('handle_frame') }}";
-        const startRecordUrl = "{{ url_for('start_record') }}";
-        const stopRecordUrl = "{{ url_for('stop_record') }}";
+        const uploadUrl = "{{ url_for('main.upload_face') }}";
+        const processFrameUrl = "{{ url_for('main.handle_frame') }}";
+        const startRecordUrl = "{{ url_for('main.start_record') }}";
+        const stopRecordUrl = "{{ url_for('main.stop_record') }}";
     </script>
     <script src="{{ url_for('static', filename='scripts.js') }}"></script>
     <script>
