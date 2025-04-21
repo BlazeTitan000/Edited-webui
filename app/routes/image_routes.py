@@ -22,7 +22,7 @@ def swap_faces():
 
         face_file = request.files['face']
         target_file = request.files['target']
-        provider = request.form.get('provider', 'CUDAExecutionProvider')
+        provider = request.form.get('providers', 'CUDAExecutionProvider')
 
         if face_file.filename == '' or target_file.filename == '':
             return jsonify({'error': 'No selected file'}), 400
@@ -31,11 +31,25 @@ def swap_faces():
         face_image = cv2.imdecode(np.frombuffer(face_file.read(), np.uint8), cv2.IMREAD_COLOR)
         target_image = cv2.imdecode(np.frombuffer(target_file.read(), np.uint8), cv2.IMREAD_COLOR)
 
+        if face_image is None or target_image is None:
+            return jsonify({'error': 'Failed to read image files'}), 400
+
+        # Initialize session with the selected provider
+        session = get_onnx_session(provider)
+        if session is None:
+            return jsonify({'error': f'Failed to initialize {provider}'}), 500
+
         # Process face swap
-        processed_image = process_frame(face_image, target_image, provider)
+        try:
+            processed_image = process_frame(face_image, target_image, provider)
+            if processed_image is None:
+                return jsonify({'error': 'Face swap processing failed'}), 500
+        except Exception as e:
+            logger.error(f"Error in face swap processing: {e}")
+            return jsonify({'error': f'Face swap processing error: {str(e)}'}), 500
 
         # Convert to base64
-        _, buffer = cv2.imencode('.jpg', processed_image)
+        _, buffer = cv2.imencode('.jpg', processed_image, [cv2.IMWRITE_JPEG_QUALITY, 90])
         processed_base64 = base64.b64encode(buffer).decode('utf-8')
 
         return jsonify({'processed_image': processed_base64})

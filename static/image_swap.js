@@ -32,13 +32,25 @@ document.getElementById('swap-button').addEventListener('click', async function 
         return;
     }
 
+    // Validate file types
+    if (!faceFile.type.startsWith('image/') || !targetFile.type.startsWith('image/')) {
+        document.getElementById('error-message').innerText = "Please select valid image files.";
+        return;
+    }
+
     const formData = new FormData();
     formData.append('face', faceFile);
     formData.append('target', targetFile);
-    formData.append('provider', provider);
+    formData.append('providers', provider);
+
+    // Disable the button during processing
+    const swapButton = document.getElementById('swap-button');
+    swapButton.disabled = true;
+    swapButton.innerText = "Processing...";
 
     document.getElementById('progress-bar').innerText = "Processing...";
     document.getElementById('error-message').innerText = "";
+    document.getElementById('message').innerText = "";
 
     try {
         const response = await fetch(swapUrl, {
@@ -48,16 +60,24 @@ document.getElementById('swap-button').addEventListener('click', async function 
 
         if (response.ok) {
             const result = await response.json();
-            document.getElementById('result-preview').src = 'data:image/jpeg;base64,' + result.processed_image;
-            document.getElementById('progress-bar').innerText = "Processing complete!";
-            document.getElementById('message').innerText = "Face swap successful!";
+            if (result.processed_image) {
+                document.getElementById('result-preview').src = 'data:image/jpeg;base64,' + result.processed_image;
+                document.getElementById('progress-bar').innerText = "Processing complete!";
+                document.getElementById('message').innerText = "Face swap successful!";
+            } else {
+                throw new Error("No processed image received from server");
+            }
         } else {
             const error = await response.text();
-            document.getElementById('error-message').innerText = "Error: " + error;
-            document.getElementById('progress-bar').innerText = "Error occurred";
+            throw new Error(error || "Server error occurred");
         }
     } catch (error) {
-        document.getElementById('error-message').innerText = "Network error: " + error.message;
+        console.error("Face swap error:", error);
+        document.getElementById('error-message').innerText = "Error: " + error.message;
         document.getElementById('progress-bar').innerText = "Error occurred";
+    } finally {
+        // Re-enable the button
+        swapButton.disabled = false;
+        swapButton.innerText = "Swap Faces";
     }
 }); 
