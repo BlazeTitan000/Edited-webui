@@ -9,7 +9,7 @@ class Config:
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
     
     # Model settings
-    MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'inswapper_128.onnx')
+    MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'models', 'inswapper_128.onnx')
     
     # Processing settings
     MIN_FRAME_SIZE = (480, 360)
