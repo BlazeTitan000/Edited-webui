@@ -49,12 +49,14 @@ FACE_ANALYSER = None
 FACE_ANALYSER_MODELS = {}  # Cache for loaded models
 last_face_detection = None
 last_face_detection_time = 0
-FACE_CACHE_DURATION = 0.2  # Cache duration for face detection
+FACE_CACHE_DURATION = 0.1  # Reduced cache duration for faster updates
 frame_counter = 0
 PROCESS_EVERY_N_FRAMES = 1  # Process every frame for consistent output
-MIN_FRAME_SIZE = (320, 240)  # Minimum frame size for processing
+MIN_FRAME_SIZE = (480, 360)  # Increased minimum frame size for better quality
 last_processed_frame = None  # Cache for frame interpolation
 processing_enabled = True  # Global flag for processing state
+TARGET_FPS = 30  # Target frames per second
+FRAME_TIMEOUT = 1.0 / TARGET_FPS  # Maximum time allowed per frame
 
 # Add global variables for frame saving
 last_save_time = 0
@@ -107,11 +109,11 @@ def get_onnx_session(provider):
             session_options.enable_cpu_mem_arena = False
             session_options.enable_mem_pattern = True
             session_options.enable_mem_reuse = True
-            session_options.intra_op_num_threads = 2  # Minimal threads to reduce overhead
-            session_options.inter_op_num_threads = 2  # Minimal threads to reduce overhead
-            session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL  # Sequential for better GPU utilization
+            session_options.intra_op_num_threads = 4  # Increased threads for faster processing
+            session_options.inter_op_num_threads = 4  # Increased threads for faster processing
+            session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
             
-            # Simplified CUDA provider options with only supported parameters
+            # Optimized CUDA provider options
             cuda_provider_options = {
                 'device_id': 0,
                 'gpu_mem_limit': 46 * 1024 * 1024 * 1024,  # Use 46GB of 48GB
@@ -295,26 +297,22 @@ def handle_frame():
                     w, h = BLACK_RECTANGLE_SIZE
                     cv2.rectangle(processed_frame, (x, y), (x + w, y + h), (0, 0, 0), -1)
                 
-                # Blend with last processed frame to prevent blinking
-                if last_processed_frame is not None:
-                    processed_frame = blend_frames(processed_frame, last_processed_frame)
-                
                 # Cache the processed frame
                 last_processed_frame = processed_frame.copy()
                 processing_enabled = True
                 
             except Exception as e:
                 logger.error(f"Error in face processing: {e}")
-                # On error, blend with last good frame
+                # On error, use last processed frame if available
                 if last_processed_frame is not None:
-                    processed_frame = blend_frames(frame, last_processed_frame)
+                    processed_frame = last_processed_frame.copy()
                 else:
                     processed_frame = frame
                 processing_enabled = False
         else:
-            # No face detected, blend with last good frame
+            # No face detected, use last processed frame if available
             if last_processed_frame is not None:
-                processed_frame = blend_frames(frame, last_processed_frame)
+                processed_frame = last_processed_frame.copy()
             else:
                 processed_frame = frame
             processing_enabled = False
@@ -324,6 +322,10 @@ def handle_frame():
         
         processing_time = time.time() - start_time
         logger.info(f"Frame processing time: {processing_time:.3f} seconds ({1/processing_time:.1f} FPS)")
+
+        # Check if we're meeting the target FPS
+        if processing_time > FRAME_TIMEOUT:
+            logger.warning(f"Frame processing time ({processing_time:.3f}s) exceeds target ({FRAME_TIMEOUT:.3f}s)")
 
         if recording and out:
             out.write(processed_frame)
@@ -336,6 +338,11 @@ def handle_frame():
 
     except Exception as e:
         logger.error(f"Error processing frame: {e}")
+        # On error, return last processed frame if available
+        if last_processed_frame is not None:
+            _, buffer = cv2.imencode('.jpg', last_processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            processed_frame_data = base64.b64encode(buffer).decode('utf-8')
+            return processed_frame_data, 200
         return str(e), 500
 
 @app.route('/record/start', methods=['POST'])

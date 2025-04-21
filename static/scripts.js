@@ -1,3 +1,11 @@
+// Define global configuration
+const config = {
+    frameInterval: 1000 / 30, // 30 FPS (33.33ms between frames)
+    maxErrors: 5,      // maximum number of errors before stopping
+    jpegQuality: 0.8,  // JPEG compression quality (0-1)
+    targetFPS: 30      // Target frames per second
+};
+
 let isRecording = false;
 let mediaStream = null;
 let canvas = document.getElementById('webcam-canvas');
@@ -6,6 +14,10 @@ let video = document.getElementById('webcam');
 let liveStream = document.getElementById('live-stream');
 let processingInterval = null;
 let errorCount = 0;
+let lastFrameTime = 0;
+let frameCounter = 0;
+let fpsCounter = 0;
+let fpsTimer = null;
 
 // Initialize webcam
 async function initWebcam() {
@@ -14,7 +26,8 @@ async function initWebcam() {
         mediaStream = await navigator.mediaDevices.getUserMedia({
             video: {
                 width: 640,
-                height: 480
+                height: 480,
+                frameRate: 30
             }
         });
         console.log("Webcam access granted");
@@ -109,8 +122,14 @@ async function startLive() {
         if (!success) return;
     }
 
+    // Start FPS counter
+    fpsTimer = setInterval(() => {
+        document.getElementById('progress-bar').innerText = `Processing: ${fpsCounter} FPS`;
+        fpsCounter = 0;
+    }, 1000);
+
     // Start processing frames
-    processingInterval = setInterval(processFrame, 100); // Process every 100ms
+    processingInterval = setInterval(processFrame, config.frameInterval);
     document.getElementById('progress-bar').innerText = "Connected and streaming...";
     document.getElementById('stop-button').disabled = false;
     document.getElementById('live-button').disabled = true;
@@ -122,12 +141,20 @@ async function processFrame() {
         return;
     }
 
+    const currentTime = performance.now();
+    const elapsed = currentTime - lastFrameTime;
+
+    // Skip frame if we're running behind
+    if (elapsed < config.frameInterval) {
+        return;
+    }
+
     try {
         const startTime = performance.now();
 
         // Capture frame from canvas with fixed dimensions
         ctx.drawImage(video, 0, 0, 640, 480);
-        const frameBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+        const frameBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', config.jpegQuality));
 
         // Send frame to server
         const response = await fetch('/process_frame', {
@@ -144,19 +171,19 @@ async function processFrame() {
 
             const endTime = performance.now();
             const processingTime = endTime - startTime;
-            console.log(`Frame processed in ${processingTime.toFixed(2)}ms`);
+            fpsCounter++;
 
-            // Update FPS display
-            const fps = 1000 / processingTime;
-            document.getElementById('progress-bar').innerText = `Processing: ${fps.toFixed(1)} FPS`;
+            // Log performance metrics
+            if (processingTime > config.frameInterval) {
+                console.warn(`Frame processing time (${processingTime.toFixed(2)}ms) exceeds target (${config.frameInterval}ms)`);
+            }
         } else {
             const error = await response.text();
             console.error("Server error:", error);
             document.getElementById('error-message').innerText = `Error processing frame: ${error}`;
 
-            // If we get too many errors, stop processing
             errorCount = (errorCount || 0) + 1;
-            if (errorCount > 5) {
+            if (errorCount > config.maxErrors) {
                 console.error("Too many errors, stopping processing");
                 stopLive();
             }
@@ -165,19 +192,25 @@ async function processFrame() {
         console.error("Error processing frame:", error);
         document.getElementById('error-message').innerText = "Error processing frame. Please try again.";
 
-        // If we get too many errors, stop processing
         errorCount = (errorCount || 0) + 1;
-        if (errorCount > 5) {
+        if (errorCount > config.maxErrors) {
             console.error("Too many errors, stopping processing");
             stopLive();
         }
     }
+
+    lastFrameTime = currentTime;
 }
 
 function stopLive() {
     if (processingInterval) {
         clearInterval(processingInterval);
         processingInterval = null;
+    }
+
+    if (fpsTimer) {
+        clearInterval(fpsTimer);
+        fpsTimer = null;
     }
 
     if (mediaStream) {
