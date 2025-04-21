@@ -9,13 +9,16 @@
 </head>
 
 <body>
-    <div class="nav-container">
-        <ul class="nav-menu">
-            <li><a href="{{ url_for('index') }}">Live Webcam</a></li>
-            <li><a href="{{ url_for('image_swap') }}" class="active">Image Swap</a></li>
-            <li><a href="{{ url_for('video_swap') }}">Video Swap</a></li>
-        </ul>
-    </div>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">Deep Live Cam</div>
+            <div class="nav-links">
+                <a href="{{ url_for('main.index') }}" class="nav-link">Live Stream</a>
+                <a href="{{ url_for('image.image_swap') }}" class="nav-link active">Image Swap</a>
+                <a href="{{ url_for('video.video_swap') }}" class="nav-link">Video Swap</a>
+            </div>
+        </div>
+    </nav>
 
     <div class="container">
         <h1>Image Face Swap</h1>
