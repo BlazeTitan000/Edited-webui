@@ -13,16 +13,19 @@ async function initWebcam() {
         console.log("Initializing webcam...");
         mediaStream = await navigator.mediaDevices.getUserMedia({
             video: {
-                width: { ideal: 640 },
-                height: { ideal: 480 }
+                width: 640,
+                height: 480
             }
         });
         console.log("Webcam access granted");
         video.srcObject = mediaStream;
         video.onloadedmetadata = () => {
             console.log(`Webcam resolution: ${video.videoWidth}x${video.videoHeight}`);
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            // Set fixed dimensions for canvas and video
+            canvas.width = 640;
+            canvas.height = 480;
+            video.width = 640;
+            video.height = 480;
         };
         return true;
     } catch (err) {
@@ -122,8 +125,8 @@ async function processFrame() {
     try {
         const startTime = performance.now();
 
-        // Capture frame from canvas
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Capture frame from canvas with fixed dimensions
+        ctx.drawImage(video, 0, 0, 640, 480);
         const frameBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
 
         // Send frame to server
@@ -135,6 +138,9 @@ async function processFrame() {
         if (response.ok) {
             const processedFrameData = await response.text();
             liveStream.src = 'data:image/jpeg;base64,' + processedFrameData;
+            // Ensure live stream maintains fixed dimensions
+            liveStream.width = 640;
+            liveStream.height = 480;
 
             const endTime = performance.now();
             const processingTime = endTime - startTime;

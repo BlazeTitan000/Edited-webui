@@ -49,11 +49,12 @@ FACE_ANALYSER = None
 FACE_ANALYSER_MODELS = {}  # Cache for loaded models
 last_face_detection = None
 last_face_detection_time = 0
-FACE_CACHE_DURATION = 0.2  # Reduced cache duration for more responsive detection
+FACE_CACHE_DURATION = 0.2  # Cache duration for face detection
 frame_counter = 0
-PROCESS_EVERY_N_FRAMES = 2  # Process every 2nd frame for smoother output
-MIN_FRAME_SIZE = (320, 240)  # Increased minimum size for better quality
+PROCESS_EVERY_N_FRAMES = 1  # Process every frame for consistent output
+MIN_FRAME_SIZE = (320, 240)  # Minimum frame size for processing
 last_processed_frame = None  # Cache for frame interpolation
+processing_enabled = True  # Global flag for processing state
 
 # Add global variables for frame saving
 last_save_time = 0
@@ -62,8 +63,8 @@ DEBUG_FRAMES_DIR = 'debug_frames'
 
 # Default black rectangle settings
 BLACK_RECTANGLE_ENABLED = True
-BLACK_RECTANGLE_POSITION = (100, 100)  # (x, y)
-BLACK_RECTANGLE_SIZE = (200, 200)  # (width, height)
+BLACK_RECTANGLE_POSITION = (220, 120)  # Centered position (x, y)
+BLACK_RECTANGLE_SIZE = (200, 200)  # Fixed size (width, height)
 
 # Ensure debug frames directory exists
 if not os.path.exists(DEBUG_FRAMES_DIR):
@@ -243,15 +244,15 @@ def get_one_face_optimized(frame):
         logger.error(f"Error in face detection: {e}")
         return None
 
-def interpolate_frames(current_frame, last_frame, alpha=0.5):
-    """Interpolate between frames for smoother output"""
-    if last_frame is None:
+def blend_frames(current_frame, last_frame, alpha=0.7):
+    """Blend frames smoothly to prevent blinking"""
+    if last_frame is None or not processing_enabled:
         return current_frame
     return cv2.addWeighted(current_frame, alpha, last_frame, 1 - alpha, 0)
 
 @app.route('/process_frame', methods=['POST'])
 def handle_frame():
-    global source_face, recording, out, session, frame_counter, last_processed_frame
+    global source_face, recording, out, session, frame_counter, last_processed_frame, processing_enabled
     
     if source_face is None:
         return "No face image uploaded. Please upload a face image first.", 400
@@ -269,15 +270,10 @@ def handle_frame():
         frame = np.array(Image.open(io.BytesIO(frame_data)))
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         
-        # Skip frames for better performance
-        frame_counter += 1
-        if frame_counter % PROCESS_EVERY_N_FRAMES != 0:
-            # Use frame interpolation for skipped frames
-            if last_processed_frame is not None:
-                frame = interpolate_frames(frame, last_processed_frame)
-            return frame_data, 200
-
-        # Resize frame to minimum size for faster processing while maintaining quality
+        # Store original frame size
+        original_size = frame.shape[:2]
+        
+        # Resize frame to minimum size for processing
         frame = cv2.resize(frame, MIN_FRAME_SIZE)
         
         # Process the frame with timing
@@ -287,23 +283,44 @@ def handle_frame():
         target_face = get_one_face_optimized(frame)
         if target_face:
             try:
+                # Process the frame
                 processed_frame = process_frame(source_face, frame)
+                
+                # Resize back to original size with high quality
+                processed_frame = cv2.resize(processed_frame, (original_size[1], original_size[0]), interpolation=cv2.INTER_LINEAR)
+                
                 # Add black rectangle only when processing is successful
                 if BLACK_RECTANGLE_ENABLED:
                     x, y = BLACK_RECTANGLE_POSITION
                     w, h = BLACK_RECTANGLE_SIZE
                     cv2.rectangle(processed_frame, (x, y), (x + w, y + h), (0, 0, 0), -1)
-                # Resize back to original size with high quality
-                processed_frame = cv2.resize(processed_frame, (640, 480), interpolation=cv2.INTER_LINEAR)
-                # Cache the processed frame for interpolation
+                
+                # Blend with last processed frame to prevent blinking
+                if last_processed_frame is not None:
+                    processed_frame = blend_frames(processed_frame, last_processed_frame)
+                
+                # Cache the processed frame
                 last_processed_frame = processed_frame.copy()
+                processing_enabled = True
+                
             except Exception as e:
                 logger.error(f"Error in face processing: {e}")
-                processed_frame = frame
-                last_processed_frame = None
+                # On error, blend with last good frame
+                if last_processed_frame is not None:
+                    processed_frame = blend_frames(frame, last_processed_frame)
+                else:
+                    processed_frame = frame
+                processing_enabled = False
         else:
-            processed_frame = frame  # Skip processing if no face detected
-            last_processed_frame = None
+            # No face detected, blend with last good frame
+            if last_processed_frame is not None:
+                processed_frame = blend_frames(frame, last_processed_frame)
+            else:
+                processed_frame = frame
+            processing_enabled = False
+        
+        # Ensure final frame is original size
+        processed_frame = cv2.resize(processed_frame, (original_size[1], original_size[0]), interpolation=cv2.INTER_LINEAR)
         
         processing_time = time.time() - start_time
         logger.info(f"Frame processing time: {processing_time:.3f} seconds ({1/processing_time:.1f} FPS)")

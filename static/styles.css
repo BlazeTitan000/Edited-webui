@@ -49,8 +49,8 @@ select {
 
 .video-container {
     position: relative;
-    width: 100%;
-    max-width: 640px;
+    width: 640px;
+    height: 480px;
     margin: 0 auto;
     background-color: #000;
     border-radius: 4px;
@@ -58,9 +58,23 @@ select {
 }
 
 #live-stream {
-    width: 100%;
+    width: 640px;
+    height: 480px;
     display: block;
     margin: 0 auto;
+    object-fit: cover;
+}
+
+#webcam-canvas {
+    width: 640px;
+    height: 480px;
+    display: none;
+}
+
+#webcam {
+    width: 640px;
+    height: 480px;
+    display: none;
 }
 
 .controls {
