@@ -7,8 +7,10 @@ from app.services.model_service import get_onnx_session, get_one_face_optimized
 from app.utils.config import Config
 from modules.processors.frame.face_swapper import process_frame, get_face_swapper
 from modules.face_analyser import get_one_face, get_face_analyser
+from modules.utilities import resolve_relative_path
 import insightface
 import modules.globals
+import onnxruntime as ort
 
 bp = Blueprint('image', __name__)
 logger = logging.getLogger(__name__)
@@ -41,8 +43,13 @@ def swap_faces():
         modules.globals.execution_providers = [provider]
         
         # Initialize face analyzer with CUDA support
-        logger.info("Initializing face analyzer...")
-        face_analyzer = get_face_analyser()
+        logger.info("Initializing face analyzer with CUDA...")
+        face_analyzer = insightface.app.FaceAnalysis(
+            name='buffalo_l',
+            providers=['CUDAExecutionProvider']  # Force CUDA only
+        )
+        face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
+        
         if face_analyzer is None:
             return jsonify({'error': 'Failed to initialize face analyzer'}), 500
 
@@ -63,8 +70,13 @@ def swap_faces():
         logger.info(f"Target face detected with bbox: {target_face.bbox}")
 
         # Initialize face swapper with CUDA support
-        logger.info("Initializing face swapper...")
-        face_swapper = get_face_swapper()
+        logger.info("Initializing face swapper with CUDA...")
+        model_path = resolve_relative_path('../models/inswapper_128.onnx')
+        face_swapper = insightface.model_zoo.get_model(
+            model_path,
+            providers=['CUDAExecutionProvider']  # Force CUDA only
+        )
+        
         if face_swapper is None:
             return jsonify({'error': 'Failed to initialize face swapper'}), 500
 
