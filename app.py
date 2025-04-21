@@ -116,7 +116,7 @@ def upload_face():
         return str(e), 500
 
 @app.route('/process_frame', methods=['POST'])
-def process_frame():
+def handle_frame():
     global source_face, recording, out, session
     
     if source_face is None:
