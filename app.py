@@ -45,6 +45,28 @@ source_face = None
 execution_provider = None
 session = None
 
+# Add global variables for frame saving
+last_save_time = 0
+SAVE_INTERVAL = 3  # seconds
+DEBUG_FRAMES_DIR = 'debug_frames'
+
+# Ensure debug frames directory exists
+if not os.path.exists(DEBUG_FRAMES_DIR):
+    os.makedirs(DEBUG_FRAMES_DIR)
+
+def save_debug_frame(frame, prefix='frame'):
+    """Save frame for debugging"""
+    global last_save_time
+    current_time = time.time()
+    
+    if current_time - last_save_time >= SAVE_INTERVAL:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{prefix}_{timestamp}.jpg"
+        filepath = os.path.join(DEBUG_FRAMES_DIR, filename)
+        cv2.imwrite(filepath, frame)
+        last_save_time = current_time
+        logger.info(f"Saved debug frame: {filename}")
+
 def get_onnx_session(provider):
     """Create ONNX session with specified execution provider"""
     try:
@@ -61,36 +83,49 @@ def get_onnx_session(provider):
         available_providers = ort.get_available_providers()
         logger.info(f"Available ONNX providers: {available_providers}")
         
-        # Create session with optimized settings for RTX A6000
+        # Create session with maximum performance settings
         try:
-            # Set optimized session options for high-end GPU
+            # Set maximum performance session options
             session_options = ort.SessionOptions()
             session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-            session_options.enable_cpu_mem_arena = False  # Disable CPU memory arena for GPU focus
-            session_options.enable_mem_pattern = True     # Enable memory pattern optimization
-            session_options.enable_mem_reuse = True       # Enable memory reuse
-            session_options.intra_op_num_threads = 4      # Increase intra-op threads
-            session_options.inter_op_num_threads = 4      # Increase inter-op threads
-            session_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL  # Enable parallel execution
+            session_options.enable_cpu_mem_arena = False
+            session_options.enable_mem_pattern = True
+            session_options.enable_mem_reuse = True
+            session_options.intra_op_num_threads = 16  # Maximum threads for parallelization
+            session_options.inter_op_num_threads = 16  # Maximum threads for parallelization
+            session_options.execution_mode = ort.ExecutionMode.ORT_PARALLEL
+            session_options.add_session_config_entry('session.load_model_format', 'ONNX')
+            session_options.add_session_config_entry('session.use_deterministic_compute', '0')
             
-            # CUDA specific options
+            # Maximum performance CUDA options
             cuda_provider_options = {
-                'device_id': 0,  # Use first GPU
+                'device_id': 0,
                 'arena_extend_strategy': 'kNextPowerOfTwo',
-                'gpu_mem_limit': 40 * 1024 * 1024 * 1024,  # 40GB limit (leaving some for system)
-                'cudnn_conv_algo_search': 'EXHAUSTIVE',     # Use exhaustive search for best performance
-                'do_copy_in_default_stream': True,          # Enable stream optimization
+                'gpu_mem_limit': 45 * 1024 * 1024 * 1024,  # Use 45GB of 48GB
+                'cudnn_conv_algo_search': 'HEURISTIC',  # Faster than EXHAUSTIVE
+                'do_copy_in_default_stream': True,
+                'enable_cuda_graph': True,
+                'cudnn_conv_use_max_workspace': '1',
+                'cudnn_conv_algo': '0',
+                'enable_tensorrt': '1',  # Enable TensorRT optimization
+                'tensorrt_fp16_enable': '1',  # Enable FP16 precision
+                'tensorrt_max_workspace_size': 2147483648,  # 2GB workspace
+                'tensorrt_max_partition_iterations': 10,
+                'tensorrt_min_subgraph_size': 1,
+                'tensorrt_dump_subgraphs': '0',
+                'tensorrt_engine_cache_enable': '1',
+                'tensorrt_engine_cache_path': './trt_cache',
             }
             
-            # Create session with CUDA provider and optimized settings
+            # Create session with maximum performance settings
             session = ort.InferenceSession(
                 model_path, 
                 providers=[('CUDAExecutionProvider', cuda_provider_options)],
                 sess_options=session_options
             )
-            logger.info("Successfully created optimized ONNX session with CUDA provider")
+            logger.info("Successfully created maximum performance ONNX session")
         except Exception as e:
-            logger.error(f"Failed to create optimized CUDA session: {e}")
+            logger.error(f"Failed to create maximum performance session: {e}")
             return None
             
         return session
@@ -161,18 +196,24 @@ def handle_frame():
         if not frame_data:
             return "No frame data received", 400
 
-        # Convert received data to OpenCV image
+        # Convert received data to OpenCV image with minimal processing
         frame = np.array(Image.open(io.BytesIO(frame_data)))
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        
+        # Optional: Resize frame for faster processing (uncomment if needed)
+        # frame = cv2.resize(frame, (640, 480))  # Adjust size as needed
 
-        # Process the frame - only pass source_face and frame
+        # Process the frame with timing
+        start_time = time.time()
         processed_frame = process_frame(source_face, frame)
+        processing_time = time.time() - start_time
+        logger.info(f"Frame processing time: {processing_time:.3f} seconds ({1/processing_time:.1f} FPS)")
 
         if recording and out:
             out.write(processed_frame)
 
-        # Convert processed frame to base64
-        _, buffer = cv2.imencode('.jpg', processed_frame)
+        # Convert processed frame to base64 with minimal quality loss
+        _, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
         processed_frame_data = base64.b64encode(buffer).decode('utf-8')
 
         return processed_frame_data, 200
