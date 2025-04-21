@@ -83,8 +83,14 @@ def swap_faces():
         # Process face swap with detailed logging
         logger.info("Starting face swap processing...")
         try:
-            # Perform face swap
-            processed_image = face_swapper.get(target_image, target_face, source_face, paste_back=True)
+            # Perform face swap with enhanced quality settings
+            processed_image = face_swapper.get(
+                target_image, 
+                target_face, 
+                source_face, 
+                paste_back=True,
+                upsample=True  # Enable upsampling for better quality
+            )
             
             if processed_image is None:
                 return jsonify({'error': 'Face swap processing failed'}), 500
@@ -107,8 +113,8 @@ def swap_faces():
             logger.error(f"Error in face swap processing: {str(e)}")
             return jsonify({'error': f'Face swap processing error: {str(e)}'}), 500
 
-        # Convert to base64 with high quality
-        _, buffer = cv2.imencode('.jpg', processed_image, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        # Convert to base64 with maximum quality
+        _, buffer = cv2.imencode('.jpg', processed_image, [cv2.IMWRITE_JPEG_QUALITY, 100])
         processed_base64 = base64.b64encode(buffer).decode('utf-8')
 
         return jsonify({'processed_image': processed_base64})
