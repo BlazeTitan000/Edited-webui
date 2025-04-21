@@ -45,19 +45,19 @@ out = None  # Video writer object
 source_face = None
 execution_provider = None
 session = None
-FACE_ANALYSER = None  # Add global face analyzer variable
+FACE_ANALYSER = None
+FACE_ANALYSER_MODELS = {}  # Cache for loaded models
+last_face_detection = None
+last_face_detection_time = 0
+FACE_CACHE_DURATION = 0.5  # Cache face detection for 0.5 seconds
+frame_counter = 0
+PROCESS_EVERY_N_FRAMES = 3  # Process every 3rd frame
+MIN_FRAME_SIZE = (160, 120)  # Minimum frame size for processing
 
 # Add global variables for frame saving
 last_save_time = 0
 SAVE_INTERVAL = 3  # seconds
 DEBUG_FRAMES_DIR = 'debug_frames'
-
-# Add global variables for optimization
-last_face_detection = None
-last_face_detection_time = 0
-FACE_CACHE_DURATION = 0.5  # Cache face detection for 0.5 seconds
-frame_counter = 0
-PROCESS_EVERY_N_FRAMES = 2  # Process every 2nd frame
 
 # Default black rectangle settings
 BLACK_RECTANGLE_ENABLED = True
@@ -187,19 +187,35 @@ def upload_face():
         return str(e), 500
 
 def get_face_analyser():
-    """Get or create face analyzer with CUDA optimization"""
-    global FACE_ANALYSER
+    """Get or create face analyzer with optimized caching"""
+    global FACE_ANALYSER, FACE_ANALYSER_MODELS
     
     if FACE_ANALYSER is None:
-        FACE_ANALYSER = insightface.app.FaceAnalysis(
-            name='buffalo_l',
-            providers=['CUDAExecutionProvider']  # Force CUDA provider
-        )
-        FACE_ANALYSER.prepare(ctx_id=0, det_size=(320, 320))  # Reduced detection size
+        try:
+            # Initialize face analyzer with CUDA provider
+            FACE_ANALYSER = insightface.app.FaceAnalysis(
+                name='buffalo_l',
+                providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+            )
+            # Prepare with CUDA context and minimal settings
+            FACE_ANALYSER.prepare(ctx_id=0, det_size=(160, 160))  # Reduced detection size
+            logger.info("Face analyzer initialized with CUDA")
+            
+            # Cache the models
+            FACE_ANALYSER_MODELS = {
+                'det_model': FACE_ANALYSER.models.get('detection'),
+                'rec_model': FACE_ANALYSER.models.get('recognition'),
+                'landmark_model': FACE_ANALYSER.models.get('landmark_2d_106')
+            }
+        except Exception as e:
+            logger.error(f"Error initializing face analyzer: {e}")
+            FACE_ANALYSER = None
+            return None
+    
     return FACE_ANALYSER
 
 def get_one_face_optimized(frame):
-    """Optimized face detection with caching"""
+    """Ultra-optimized face detection with aggressive caching"""
     global last_face_detection, last_face_detection_time
     
     current_time = time.time()
@@ -207,15 +223,23 @@ def get_one_face_optimized(frame):
         current_time - last_face_detection_time < FACE_CACHE_DURATION):
         return last_face_detection
     
-    # Resize frame for faster detection
-    small_frame = cv2.resize(frame, (320, 240))
-    faces = get_face_analyser().get(small_frame)
-    
     try:
-        last_face_detection = min(faces, key=lambda x: x.bbox[0])
-        last_face_detection_time = current_time
-        return last_face_detection
-    except ValueError:
+        # Resize frame to minimum size for faster processing
+        small_frame = cv2.resize(frame, MIN_FRAME_SIZE)
+        
+        # Use cached models directly for faster detection
+        if FACE_ANALYSER_MODELS:
+            det_model = FACE_ANALYSER_MODELS['det_model']
+            if det_model:
+                faces = det_model.get(small_frame)
+                if faces:
+                    last_face_detection = min(faces, key=lambda x: x.bbox[0])
+                    last_face_detection_time = current_time
+                    return last_face_detection
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error in face detection: {e}")
         return None
 
 @app.route('/process_frame', methods=['POST'])
@@ -247,10 +271,10 @@ def handle_frame():
         if BLACK_RECTANGLE_ENABLED:
             x, y = BLACK_RECTANGLE_POSITION
             w, h = BLACK_RECTANGLE_SIZE
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 0), -1)  # -1 for filled rectangle
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 0), -1)
         
-        # Resize frame to minimum acceptable size for maximum speed
-        frame = cv2.resize(frame, (320, 240))  # Minimum size for face detection
+        # Resize frame to minimum size for faster processing
+        frame = cv2.resize(frame, MIN_FRAME_SIZE)
         
         # Process the frame with timing
         start_time = time.time()
@@ -258,9 +282,13 @@ def handle_frame():
         # Use optimized face detection
         target_face = get_one_face_optimized(frame)
         if target_face:
-            processed_frame = process_frame(source_face, frame)
-            # Resize back to original size
-            processed_frame = cv2.resize(processed_frame, (640, 480))
+            try:
+                processed_frame = process_frame(source_face, frame)
+                # Resize back to original size
+                processed_frame = cv2.resize(processed_frame, (640, 480))
+            except Exception as e:
+                logger.error(f"Error in face processing: {e}")
+                processed_frame = frame
         else:
             processed_frame = frame  # Skip processing if no face detected
         
@@ -271,7 +299,7 @@ def handle_frame():
             out.write(processed_frame)
 
         # Convert processed frame to base64 with minimal quality
-        _, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+        _, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 60])  # Reduced quality for faster encoding
         processed_frame_data = base64.b64encode(buffer).decode('utf-8')
 
         return processed_frame_data, 200
