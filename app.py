@@ -18,7 +18,13 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 sock = Sock(app)
+
+# Cloud deployment configurations
 app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['SOCK_SERVER_OPTIONS'] = {'ping_interval': 25}
+
+# Ensure upload directory exists
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
@@ -39,7 +45,9 @@ def get_onnx_session(provider):
     }
     
     try:
-        session = ort.InferenceSession('inswapper_128.onnx', providers=providers.get(provider, ['CPUExecutionProvider']))
+        # Use absolute path for the model file
+        model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'inswapper_128.onnx')
+        session = ort.InferenceSession(model_path, providers=providers.get(provider, ['CPUExecutionProvider']))
         logger.info(f"Created ONNX session with provider: {provider}")
         return session
     except Exception as e:
@@ -48,7 +56,11 @@ def get_onnx_session(provider):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        logger.error(f"Error rendering index: {e}")
+        return "An error occurred while loading the page. Please check the server logs.", 500
 
 @app.route('/upload_face', methods=['POST'])
 def upload_face():
@@ -164,4 +176,7 @@ def stop_record():
         return str(e), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # For cloud deployment, use the following:
+    port = int(os.environ.get('PORT', 5000))
+    host = '0.0.0.0'  # Listen on all network interfaces
+    app.run(host=host, port=port, debug=False)  # Set debug=False for production
