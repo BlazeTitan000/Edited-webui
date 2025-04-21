@@ -102,27 +102,15 @@ def get_onnx_session(provider):
             session_options.intra_op_num_threads = 2  # Minimal threads to reduce overhead
             session_options.inter_op_num_threads = 2  # Minimal threads to reduce overhead
             session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL  # Sequential for better GPU utilization
-            session_options.add_session_config_entry('session.load_model_format', 'ONNX')
-            session_options.add_session_config_entry('session.use_deterministic_compute', '0')
             
-            # Maximum performance CUDA options
+            # Simplified CUDA provider options with only supported parameters
             cuda_provider_options = {
                 'device_id': 0,
                 'gpu_mem_limit': 46 * 1024 * 1024 * 1024,  # Use 46GB of 48GB
                 'arena_extend_strategy': 'kNextPowerOfTwo',
                 'cudnn_conv_algo_search': 'HEURISTIC',
                 'do_copy_in_default_stream': True,
-                'enable_cuda_graph': True,
-                'cudnn_conv_use_max_workspace': '1',
-                'cudnn_conv_algo': '0',
-                'enable_tensorrt': '1',
-                'tensorrt_fp16_enable': '1',
-                'tensorrt_max_workspace_size': 2147483648,
-                'tensorrt_max_partition_iterations': 10,
-                'tensorrt_min_subgraph_size': 1,
-                'tensorrt_dump_subgraphs': '0',
-                'tensorrt_engine_cache_enable': '1',
-                'tensorrt_engine_cache_path': './trt_cache'
+                'enable_cuda_graph': True
             }
             
             # Create session with CUDA provider only
