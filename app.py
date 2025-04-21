@@ -101,7 +101,7 @@ def upload_face():
         return str(e), 500
 
 @sock.route('/ws')
-def handle_ws(ws):
+def ws(ws):
     global source_face, recording, out, session
     
     if source_face is None:
