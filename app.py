@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, Response
+from flask import Flask, render_template, request, redirect, url_for, Response, jsonify, send_file
 import cv2
 import os
 import threading
@@ -386,6 +386,97 @@ def preload_models():
 
 # Call preload_models when the application starts
 preload_models()
+
+@app.route('/image_swap')
+def image_swap():
+    return render_template('image_swap.html')
+
+@app.route('/video_swap')
+def video_swap():
+    return render_template('video_swap.html')
+
+@app.route('/swap_faces', methods=['POST'])
+def swap_faces():
+    try:
+        if 'face' not in request.files or 'target' not in request.files:
+            return jsonify({'error': 'Missing face or target image'}), 400
+
+        face_file = request.files['face']
+        target_file = request.files['target']
+        provider = request.form.get('provider', 'CUDAExecutionProvider')
+
+        if face_file.filename == '' or target_file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+
+        # Read images
+        face_image = cv2.imdecode(np.frombuffer(face_file.read(), np.uint8), cv2.IMREAD_COLOR)
+        target_image = cv2.imdecode(np.frombuffer(target_file.read(), np.uint8), cv2.IMREAD_COLOR)
+
+        # Process face swap
+        processed_image = process_frame(face_image, target_image, provider)
+
+        # Convert to base64
+        _, buffer = cv2.imencode('.jpg', processed_image)
+        processed_base64 = base64.b64encode(buffer).decode('utf-8')
+
+        return jsonify({'processed_image': processed_base64})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/process_video', methods=['POST'])
+def process_video():
+    try:
+        if 'face' not in request.files or 'video' not in request.files:
+            return jsonify({'error': 'Missing face image or video'}), 400
+
+        face_file = request.files['face']
+        video_file = request.files['video']
+        provider = request.form.get('provider', 'CUDAExecutionProvider')
+
+        if face_file.filename == '' or video_file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+
+        # Read face image
+        face_image = cv2.imdecode(np.frombuffer(face_file.read(), np.uint8), cv2.IMREAD_COLOR)
+
+        # Save video temporarily
+        temp_video_path = 'temp_video.mp4'
+        video_file.save(temp_video_path)
+
+        # Process video
+        output_path = 'output_video.mp4'
+        process_video_frames(face_image, temp_video_path, output_path, provider)
+
+        # Clean up temp file
+        os.remove(temp_video_path)
+
+        # Return processed video
+        return send_file(output_path, mimetype='video/mp4')
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def process_video_frames(face_image, input_path, output_path, provider):
+    cap = cv2.VideoCapture(input_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Process frame
+        processed_frame = process_frame(face_image, frame, provider)
+        out.write(processed_frame)
+
+    cap.release()
+    out.release()
 
 if __name__ == '__main__':
     # For cloud deployment, use the following:

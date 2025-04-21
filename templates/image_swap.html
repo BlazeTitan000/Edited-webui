@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Face Swap</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+
+<body>
+    <div class="nav-container">
+        <ul class="nav-menu">
+            <li><a href="{{ url_for('index') }}">Live Webcam</a></li>
+            <li><a href="{{ url_for('image_swap') }}" class="active">Image Swap</a></li>
+            <li><a href="{{ url_for('video_swap') }}">Video Swap</a></li>
+        </ul>
+    </div>
+
+    <div class="container">
+        <h1>Image Face Swap</h1>
+
+        <div class="upload-section">
+            <form id="upload-form" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="face">Select Source Face Image:</label>
+                    <input type="file" id="face" name="face" accept="image/*">
+                </div>
+
+                <div class="form-group">
+                    <label for="target">Select Target Image:</label>
+                    <input type="file" id="target" name="target" accept="image/*">
+                </div>
+
+                <div class="form-group">
+                    <label for="providers">Select Execution Provider:</label>
+                    <select id="providers" name="providers">
+                        <option value="CPUExecutionProvider">CPU</option>
+                        <option value="CUDAExecutionProvider">CUDA (Nvidia)</option>
+                        <option value="OpenVINOExecutionProvider">OpenVINO (Intel)</option>
+                    </select>
+                </div>
+
+                <button type="button" id="swap-button">Swap Faces</button>
+            </form>
+        </div>
+
+        <div class="result-section">
+            <div class="image-container">
+                <div class="image-box">
+                    <h3>Source Face</h3>
+                    <img id="source-preview" alt="Source face preview">
+                </div>
+                <div class="image-box">
+                    <h3>Target Image</h3>
+                    <img id="target-preview" alt="Target image preview">
+                </div>
+                <div class="image-box">
+                    <h3>Result</h3>
+                    <img id="result-preview" alt="Result preview">
+                </div>
+            </div>
+        </div>
+
+        <div class="status-section">
+            <div id="progress-bar">Ready</div>
+            <div id="message" class="message"></div>
+            <div id="error-message" class="error-message"></div>
+        </div>
+    </div>
+
+    <script>
+        const swapUrl = "{{ url_for('swap_faces') }}";
+    </script>
+    <script src="{{ url_for('static', filename='image_swap.js') }}"></script>
+</body>
+
+</html>
