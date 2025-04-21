@@ -3,7 +3,7 @@ import cv2
 import os
 import threading
 import numpy as np
-from modules.processors.frame.face_swapper import process_frame
+from modules.processors.frame.face_swapper import process_frame, pre_check
 from modules.face_analyser import get_one_face
 import io
 from PIL import Image
@@ -12,6 +12,7 @@ import logging
 import time
 from datetime import datetime
 import base64
+from modules.utilities import resolve_relative_path
 
 # Configure logging
 logging.basicConfig(
@@ -29,6 +30,12 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 # Ensure upload directory exists
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
+
+# Ensure models directory exists and download model if needed
+models_dir = resolve_relative_path('models')
+if not os.path.exists(models_dir):
+    os.makedirs(models_dir)
+pre_check()  # This will download the model if it doesn't exist
 
 # Global variables
 uploaded_face_path = None
