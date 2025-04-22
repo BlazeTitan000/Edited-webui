@@ -3,37 +3,19 @@ import cv2
 import numpy as np
 import base64
 import logging
-from app.services.model_service import get_onnx_session, get_one_face_optimized
+import time
 from app.utils.config import Config
-from modules.processors.frame.face_swapper import process_frame, get_face_swapper, swap_face
-from modules.face_analyser import get_one_face, get_many_faces
-from modules.utilities import resolve_relative_path
-import insightface
+from modules.processors.frame.face_swapper import process_frame
+from modules.face_analyser import get_one_face
 import modules.globals
-import onnxruntime as ort
 
 bp = Blueprint('image', __name__)
 logger = logging.getLogger(__name__)
 
-def enhance_face(image, face):
-    # Get face region
-    x1, y1, x2, y2 = face.bbox.astype(int)
-    face_region = image[y1:y2, x1:x2]
-    
-    # Apply bilateral filter for noise reduction while preserving edges
-    face_region = cv2.bilateralFilter(face_region, 9, 75, 75)
-    
-    # Apply sharpening
-    kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-    face_region = cv2.filter2D(face_region, -1, kernel)
-    
-    # Put enhanced face back
-    image[y1:y2, x1:x2] = face_region
-    return image
-
-@bp.route('/image_swap')
-def image_swap():
-    return render_template('image_swap.html')
+# Global variables for frame processing
+last_processed_frame = None
+processing_enabled = True
+FACE_CACHE_DURATION = 0.1
 
 @bp.route('/swap_faces', methods=['POST'])
 def swap_faces():
@@ -60,32 +42,32 @@ def swap_faces():
         # Resize to optimal size for processing
         target_image = cv2.resize(target_image, Config.MIN_FRAME_SIZE, interpolation=cv2.INTER_LINEAR)
 
-        # Force CUDA provider
+        # Set execution providers
         modules.globals.execution_providers = ['CUDAExecutionProvider']
         
-        # Get source face using Deep Live Cam's face detection
+        # Get source face
         logger.info("Detecting source face...")
         source_face = get_one_face(face_image)
         if not source_face:
             return jsonify({'error': 'No face detected in source image'}), 400
         logger.info(f"Source face detected with bbox: {source_face.bbox}")
 
-        # Get target face
-        logger.info("Detecting target face...")
-        target_face = get_one_face(target_image)
-        if not target_face:
-            return jsonify({'error': 'No face detected in target image'}), 400
-        logger.info(f"Target face detected with bbox: {target_face.bbox}")
-
-        # Process the frame using Deep Live Cam's swap_face
+        # Process the frame using Deep Live Cam's process_frame
         logger.info("Starting face swap processing...")
         try:
-            # Use the exact same swap_face function from Deep Live Cam
-            processed_image = swap_face(source_face, target_face, target_image)
+            # Process the frame
+            processed_image = process_frame(source_face, target_image)
             
             if processed_image is None:
-                return jsonify({'error': 'Face swap processing failed'}), 500
+                if last_processed_frame is not None:
+                    processed_image = last_processed_frame.copy()
+                else:
+                    return jsonify({'error': 'Face swap processing failed'}), 500
                 
+            # Cache the processed frame
+            last_processed_frame = processed_image.copy()
+            processing_enabled = True
+            
             logger.info("Face swap completed successfully")
             
             # Resize back to original size with high quality
@@ -93,7 +75,11 @@ def swap_faces():
             
         except Exception as e:
             logger.error(f"Error in face swap processing: {str(e)}")
-            return jsonify({'error': f'Face swap processing error: {str(e)}'}), 500
+            if last_processed_frame is not None:
+                processed_image = last_processed_frame.copy()
+            else:
+                return jsonify({'error': f'Face swap processing error: {str(e)}'}), 500
+            processing_enabled = False
 
         # Convert to base64 with maximum quality
         _, buffer = cv2.imencode('.jpg', processed_image, [cv2.IMWRITE_JPEG_QUALITY, 100])
