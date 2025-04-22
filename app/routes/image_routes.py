@@ -5,8 +5,8 @@ import base64
 import logging
 from app.services.model_service import get_onnx_session, get_one_face_optimized
 from app.utils.config import Config
-from modules.processors.frame.face_swapper import process_frame, get_face_swapper
-from modules.face_analyser import get_one_face, get_face_analyser
+from modules.processors.frame.face_swapper import process_frame, get_face_swapper, swap_face
+from modules.face_analyser import get_one_face, get_many_faces
 from modules.utilities import resolve_relative_path
 import insightface
 import modules.globals
@@ -55,77 +55,35 @@ def swap_faces():
         if face_image is None or target_image is None:
             return jsonify({'error': 'Failed to read image files'}), 400
 
-        # Set execution providers for face analyzer
+        # Store original size
+        original_size = target_image.shape[:2]
+        
+        # Resize to optimal size for processing
+        target_image = cv2.resize(target_image, Config.MIN_FRAME_SIZE, interpolation=cv2.INTER_LINEAR)
+
+        # Set execution providers
         modules.globals.execution_providers = [provider]
         
-        # Initialize face analyzer with CUDA support and higher detection threshold
-        logger.info("Initializing face analyzer with CUDA...")
-        face_analyzer = insightface.app.FaceAnalysis(
-            name='buffalo_l',
-            providers=['CUDAExecutionProvider']  # Force CUDA only
-        )
-        face_analyzer.prepare(ctx_id=0, det_size=(640, 640), det_thresh=0.6)  # Increased detection threshold
-        
-        if face_analyzer is None:
-            return jsonify({'error': 'Failed to initialize face analyzer'}), 500
-
-        # Get source face with detailed logging
-        logger.info("Detecting face in source image...")
-        source_faces = face_analyzer.get(face_image)
-        if not source_faces:
+        # Get source face using optimized detection
+        logger.info("Detecting source face...")
+        source_face = get_one_face(face_image)
+        if not source_face:
             return jsonify({'error': 'No face detected in source image'}), 400
-        source_face = source_faces[0]  # Use the first face found
         logger.info(f"Source face detected with bbox: {source_face.bbox}")
 
-        # Get target face with detailed logging
-        logger.info("Detecting face in target image...")
-        target_faces = face_analyzer.get(target_image)
-        if not target_faces:
-            return jsonify({'error': 'No face detected in target image'}), 400
-        target_face = target_faces[0]  # Use the first face found
-        logger.info(f"Target face detected with bbox: {target_face.bbox}")
-
-        # Initialize face swapper with CUDA support
-        logger.info("Initializing face swapper with CUDA...")
-        model_path = resolve_relative_path('../models/inswapper_128.onnx')
-        face_swapper = insightface.model_zoo.get_model(
-            model_path,
-            providers=['CUDAExecutionProvider']  # Force CUDA only
-        )
-        
-        if face_swapper is None:
-            return jsonify({'error': 'Failed to initialize face swapper'}), 500
-
-        # Process face swap with detailed logging
+        # Process the frame using Deep Live Cam's process_frame
         logger.info("Starting face swap processing...")
         try:
-            # Perform face swap
-            processed_image = face_swapper.get(
-                target_image, 
-                target_face, 
-                source_face, 
-                paste_back=True
-            )
+            # Use the exact same process_frame function from Deep Live Cam
+            processed_image = process_frame(source_face, target_image)
             
             if processed_image is None:
                 return jsonify({'error': 'Face swap processing failed'}), 500
                 
             logger.info("Face swap completed successfully")
             
-            # Verify the processed image
-            if np.all(processed_image == 0):
-                logger.error("Processed image is completely black")
-                return jsonify({'error': 'Face swap resulted in black image'}), 500
-                
-            # Check if face area is black
-            face_area = processed_image[int(target_face.bbox[1]):int(target_face.bbox[3]),
-                                      int(target_face.bbox[0]):int(target_face.bbox[2])]
-            if np.mean(face_area) < 10:  # If average pixel value is very low
-                logger.error("Face area is black after processing")
-                return jsonify({'error': 'Face area is black after processing'}), 500
-            
-            # Enhance the swapped face
-            processed_image = enhance_face(processed_image, target_face)
+            # Resize back to original size with high quality
+            processed_image = cv2.resize(processed_image, (original_size[1], original_size[0]), interpolation=cv2.INTER_LINEAR)
             
         except Exception as e:
             logger.error(f"Error in face swap processing: {str(e)}")
