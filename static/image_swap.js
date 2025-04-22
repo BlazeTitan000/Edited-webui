@@ -25,7 +25,6 @@ document.getElementById('target').addEventListener('change', function (e) {
 document.getElementById('swap-button').addEventListener('click', async function () {
     const faceFile = document.getElementById('face').files[0];
     const targetFile = document.getElementById('target').files[0];
-    const provider = document.getElementById('providers').value;
 
     if (!faceFile || !targetFile) {
         document.getElementById('error-message').innerText = "Please select both source face and target images.";
@@ -41,7 +40,6 @@ document.getElementById('swap-button').addEventListener('click', async function 
     const formData = new FormData();
     formData.append('face', faceFile);
     formData.append('target', targetFile);
-    formData.append('providers', provider);
 
     // Disable the button during processing
     const swapButton = document.getElementById('swap-button');
@@ -68,8 +66,8 @@ document.getElementById('swap-button').addEventListener('click', async function 
                 throw new Error("No processed image received from server");
             }
         } else {
-            const error = await response.text();
-            throw new Error(error || "Server error occurred");
+            const error = await response.json();
+            throw new Error(error.error || "Server error occurred");
         }
     } catch (error) {
         console.error("Face swap error:", error);
