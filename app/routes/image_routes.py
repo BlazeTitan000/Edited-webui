@@ -63,6 +63,10 @@ def swap_faces():
                     processed_image = last_processed_frame.copy()
                 else:
                     return jsonify({'error': 'Face swap processing failed'}), 500
+            
+            # Convert grayscale to BGR if needed
+            if len(processed_image.shape) == 2:
+                processed_image = cv2.cvtColor(processed_image, cv2.COLOR_GRAY2BGR)
                 
             # Cache the processed frame
             last_processed_frame = processed_image.copy()
