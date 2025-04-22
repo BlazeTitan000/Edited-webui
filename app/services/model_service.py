@@ -5,6 +5,7 @@ from app.utils.config import Config
 import os
 import time
 import cv2
+import modules.globals
 
 logger = logging.getLogger(__name__)
 
@@ -75,13 +76,16 @@ def get_face_analyser():
     
     if FACE_ANALYSER is None:
         try:
+            # Initialize face analyzer with same parameters as Deep Live Cam
             FACE_ANALYSER = insightface.app.FaceAnalysis(
                 name='buffalo_l',
-                providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+                providers=modules.globals.execution_providers
             )
-            FACE_ANALYSER.prepare(ctx_id=0, det_size=(160, 160))
-            logger.info("Face analyzer initialized with CUDA")
+            # Use same detection size as Deep Live Cam
+            FACE_ANALYSER.prepare(ctx_id=0, det_size=(640, 640))
+            logger.info("Face analyzer initialized with Deep Live Cam parameters")
             
+            # Cache the models
             FACE_ANALYSER_MODELS = {
                 'det_model': FACE_ANALYSER.models.get('detection'),
                 'rec_model': FACE_ANALYSER.models.get('recognition'),
@@ -95,7 +99,7 @@ def get_face_analyser():
     return FACE_ANALYSER
 
 def get_one_face_optimized(frame):
-    """Ultra-optimized face detection with aggressive caching"""
+    """Face detection using Deep Live Cam's approach"""
     global last_face_detection, last_face_detection_time
     
     current_time = time.time()
@@ -104,26 +108,20 @@ def get_one_face_optimized(frame):
         return last_face_detection
     
     try:
-        # Ensure frame is in correct format
-        if len(frame.shape) != 3 or frame.shape[2] != 3:
-            logger.error("Invalid frame format")
-            return None
-            
-        small_frame = cv2.resize(frame, Config.MIN_FRAME_SIZE)
-        
+        # Use same face detection approach as Deep Live Cam
         face_analyser = get_face_analyser()
         if face_analyser is None:
             logger.error("Face analyzer not initialized")
             return None
             
-        faces = face_analyser.get(small_frame)
+        faces = face_analyser.get(frame)
         
         if not faces:
             logger.debug("No faces detected in frame")
             return None
             
-        # Get the largest face
-        face = max(faces, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))
+        # Get the first face like Deep Live Cam
+        face = faces[0]
         
         # Cache the result
         last_face_detection = face

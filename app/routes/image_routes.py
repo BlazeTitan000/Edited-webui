@@ -43,7 +43,6 @@ def swap_faces():
 
         face_file = request.files['face']
         target_file = request.files['target']
-        provider = request.form.get('providers', 'CUDAExecutionProvider')
 
         if face_file.filename == '' or target_file.filename == '':
             return jsonify({'error': 'No selected file'}), 400
@@ -61,21 +60,28 @@ def swap_faces():
         # Resize to optimal size for processing
         target_image = cv2.resize(target_image, Config.MIN_FRAME_SIZE, interpolation=cv2.INTER_LINEAR)
 
-        # Set execution providers
-        modules.globals.execution_providers = [provider]
+        # Force CUDA provider
+        modules.globals.execution_providers = ['CUDAExecutionProvider']
         
-        # Get source face using optimized detection
+        # Get source face using Deep Live Cam's face detection
         logger.info("Detecting source face...")
         source_face = get_one_face(face_image)
         if not source_face:
             return jsonify({'error': 'No face detected in source image'}), 400
         logger.info(f"Source face detected with bbox: {source_face.bbox}")
 
-        # Process the frame using Deep Live Cam's process_frame
+        # Get target face
+        logger.info("Detecting target face...")
+        target_face = get_one_face(target_image)
+        if not target_face:
+            return jsonify({'error': 'No face detected in target image'}), 400
+        logger.info(f"Target face detected with bbox: {target_face.bbox}")
+
+        # Process the frame using Deep Live Cam's swap_face
         logger.info("Starting face swap processing...")
         try:
-            # Use the exact same process_frame function from Deep Live Cam
-            processed_image = process_frame(source_face, target_image)
+            # Use the exact same swap_face function from Deep Live Cam
+            processed_image = swap_face(source_face, target_face, target_image)
             
             if processed_image is None:
                 return jsonify({'error': 'Face swap processing failed'}), 500
