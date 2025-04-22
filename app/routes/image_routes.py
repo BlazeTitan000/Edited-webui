@@ -17,6 +17,10 @@ last_processed_frame = None
 processing_enabled = True
 FACE_CACHE_DURATION = 0.1
 
+@bp.route('/image_swap')
+def image_swap():
+    return render_template('image_swap.html')
+
 @bp.route('/swap_faces', methods=['POST'])
 def swap_faces():
     try:
