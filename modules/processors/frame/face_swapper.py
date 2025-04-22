@@ -2,6 +2,7 @@ from typing import Any, List
 import cv2
 import insightface
 import threading
+import numpy as np
 
 import modules.globals
 import modules.processors.frame.core
@@ -47,21 +48,47 @@ def get_face_swapper() -> Any:
             FACE_SWAPPER = insightface.model_zoo.get_model(model_path, providers=modules.globals.execution_providers)
     return FACE_SWAPPER
 
-def swap_face(source_face: Face, target_face: Face, temp_frame: Frame) -> Frame:
-    return get_face_swapper().get(temp_frame, target_face, source_face, paste_back=True)
+def swap_face(source_face : Face, target_face : Face, temp_frame : Frame) -> Frame:
+    model = get_face_swapper()
+    if model is None:
+        return temp_frame
+    
+    # Get face landmarks
+    source_landmarks = source_face.landmark_2d_106
+    target_landmarks = target_face.landmark_2d_106
+    
+    # Calculate transformation matrix
+    matrix = cv2.estimateAffinePartial2D(source_landmarks, target_landmarks)[0]
+    
+    # Warp source face to target face
+    warped_face = cv2.warpAffine(
+        source_face.normed_embedding,
+        matrix,
+        (temp_frame.shape[1], temp_frame.shape[0]),
+        borderMode=cv2.BORDER_REPLICATE,
+        flags=cv2.INTER_LINEAR
+    )
+    
+    # Create mask for blending
+    mask = np.zeros_like(temp_frame, dtype=np.float32)
+    cv2.fillConvexPoly(mask, target_face.landmark_2d_106.astype(np.int32), (1, 1, 1))
+    
+    # Blend the faces
+    result = temp_frame * (1 - mask) + warped_face * mask
+    
+    return result.astype(np.uint8)
 
-
-def process_frame(source_face: Face, temp_frame: Frame) -> Frame:
-    if modules.globals.many_faces:
-        many_faces = get_many_faces(temp_frame)
-        if many_faces:
-            for target_face in many_faces:
-                temp_frame = swap_face(source_face, target_face, temp_frame)
-    else:
-        target_face = get_one_face(temp_frame)
-        if target_face:
-            temp_frame = swap_face(source_face, target_face, temp_frame)
-    return temp_frame
+def process_frame(source_face : Face, temp_frame : Frame) -> Frame:
+    if temp_frame is None:
+        return None
+    
+    # Get target face
+    target_face = get_one_face(temp_frame)
+    if target_face is None:
+        return temp_frame
+    
+    # Swap face
+    return swap_face(source_face, target_face, temp_frame)
 
 
 def process_frames(source_path: str, temp_frame_paths: List[str], progress: Any = None) -> None:

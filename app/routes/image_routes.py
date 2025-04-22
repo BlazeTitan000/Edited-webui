@@ -33,18 +33,12 @@ def swap_faces():
         if face_file.filename == '' or target_file.filename == '':
             return jsonify({'error': 'No selected file'}), 400
 
-        # Read images
+        # Read images with maximum quality
         face_image = cv2.imdecode(np.frombuffer(face_file.read(), np.uint8), cv2.IMREAD_COLOR)
         target_image = cv2.imdecode(np.frombuffer(target_file.read(), np.uint8), cv2.IMREAD_COLOR)
 
         if face_image is None or target_image is None:
             return jsonify({'error': 'Failed to read image files'}), 400
-
-        # Store original size
-        original_size = target_image.shape[:2]
-        
-        # Resize to optimal size for processing
-        target_image = cv2.resize(target_image, Config.MIN_FRAME_SIZE, interpolation=cv2.INTER_LINEAR)
 
         # Set execution providers
         modules.globals.execution_providers = ['CUDAExecutionProvider']
@@ -59,7 +53,7 @@ def swap_faces():
         # Process the frame using Deep Live Cam's process_frame
         logger.info("Starting face swap processing...")
         try:
-            # Process the frame
+            # Process the frame without resizing
             processed_image = process_frame(source_face, target_image)
             
             if processed_image is None:
@@ -73,9 +67,6 @@ def swap_faces():
             processing_enabled = True
             
             logger.info("Face swap completed successfully")
-            
-            # Resize back to original size with high quality
-            processed_image = cv2.resize(processed_image, (original_size[1], original_size[0]), interpolation=cv2.INTER_LINEAR)
             
         except Exception as e:
             logger.error(f"Error in face swap processing: {str(e)}")
