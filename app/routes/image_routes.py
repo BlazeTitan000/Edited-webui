@@ -23,6 +23,8 @@ def image_swap():
 
 @bp.route('/swap_faces', methods=['POST'])
 def swap_faces():
+    global last_processed_frame, processing_enabled
+    
     try:
         if 'face' not in request.files or 'target' not in request.files:
             return jsonify({'error': 'Missing face or target image'}), 400
@@ -53,7 +55,7 @@ def swap_faces():
         # Process the frame using Deep Live Cam's process_frame
         logger.info("Starting face swap processing...")
         try:
-            # Process the frame without resizing
+            # Process the frame
             processed_image = process_frame(source_face, target_image)
             
             if processed_image is None:
